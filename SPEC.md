@@ -89,4 +89,4 @@ Saídas: Verdict (payback em meses vs vida útil; "cada mês sem trocar custa R$
 
 - `npx tsc --noEmit` limpo (strict, noUnusedLocals). Rodar antes de terminar.
 - Página deve funcionar com qualquer combinação de inputs (sem NaN/Infinity na tela — usar guards).
-- Números conferidos: testar 2-3 casos à mão (ex.: IRRF de R$ 5.000 = R$ 0; parcela Price de 200k/12%/360 ≈ R$ 2.057).
+- Números conferidos: testar 2-3 casos à mão (ex.: IRRF de R$ 5.000 = R$ 0; parcela Price de 200k/12% a.a. efetiva/360 ≈ R$ 1.963 — a lib usa conversão composta `aToM`, padrão brasileiro).

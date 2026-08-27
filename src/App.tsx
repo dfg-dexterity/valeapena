@@ -1,13 +1,15 @@
+import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { Briefcase, Car, Home as HomeIcon, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
-import Carro from './pages/Carro'
-import Imovel from './pages/Imovel'
-import Investimentos from './pages/Investimentos'
-import Risco from './pages/Risco'
-import PjClt from './pages/PjClt'
-import Computador from './pages/Computador'
+
+const Carro = lazy(() => import('./pages/Carro'))
+const Imovel = lazy(() => import('./pages/Imovel'))
+const Investimentos = lazy(() => import('./pages/Investimentos'))
+const Risco = lazy(() => import('./pages/Risco'))
+const PjClt = lazy(() => import('./pages/PjClt'))
+const Computador = lazy(() => import('./pages/Computador'))
 
 export const TOOLS = [
   {
@@ -117,16 +119,20 @@ export default function App() {
     <div className="flex min-h-screen flex-col">
       <TopBar />
       <main className="flex-1">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/carro" element={<Carro />} />
-          <Route path="/imovel" element={<Imovel />} />
-          <Route path="/investimentos" element={<Investimentos />} />
-          <Route path="/risco" element={<Risco />} />
-          <Route path="/pj-clt" element={<PjClt />} />
-          <Route path="/computador" element={<Computador />} />
-          <Route path="*" element={<Home />} />
-        </Routes>
+        <Suspense
+          fallback={<div className="py-24 text-center text-sm text-mute">Carregando calculadora…</div>}
+        >
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/carro" element={<Carro />} />
+            <Route path="/imovel" element={<Imovel />} />
+            <Route path="/investimentos" element={<Investimentos />} />
+            <Route path="/risco" element={<Risco />} />
+            <Route path="/pj-clt" element={<PjClt />} />
+            <Route path="/computador" element={<Computador />} />
+            <Route path="*" element={<Home />} />
+          </Routes>
+        </Suspense>
       </main>
       <Footer />
     </div>

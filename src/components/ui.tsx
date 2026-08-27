@@ -143,7 +143,11 @@ export function SliderField({
     setEditing(false)
     const parser = parse ?? defaultParse
     const v = parser(draft)
-    if (Number.isFinite(v)) onChange(clamp(v, min, max))
+    if (!Number.isFinite(v)) return
+    // snap ao step (evita valores tipo 37,5 num slider de step 1)
+    const snapped = step > 0 ? min + Math.round((v - min) / step) * step : v
+    const decimals = Math.min(6, Math.max(0, -Math.floor(Math.log10(step || 1)) + 1))
+    onChange(clamp(parseFloat(snapped.toFixed(decimals)), min, max))
   }
 
   return (

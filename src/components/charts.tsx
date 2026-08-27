@@ -11,6 +11,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -284,6 +285,129 @@ export function VBarChart({
           )
         })}
       </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+interface FanRow {
+  [k: string]: number | string
+}
+
+/**
+ * Fan chart: banda entre dois percentis (área de range) + linha da mediana.
+ * Tooltip mostra os três valores ABSOLUTOS (não a largura da banda).
+ */
+export function VFanChart({
+  data,
+  xKey,
+  lowKey,
+  medianKey,
+  highKey,
+  labels,
+  xFormat,
+  yFormat,
+  height = 300,
+  color,
+}: {
+  data: FanRow[]
+  xKey: string
+  lowKey: string
+  medianKey: string
+  highKey: string
+  labels: { low: string; median: string; high: string }
+  xFormat?: (v: string | number) => string
+  yFormat: (v: number) => string
+  height?: number
+  color?: string
+}) {
+  const c = useVizColors()
+  const col = color ?? c.series[0]
+
+  const FanTooltip = ({
+    active,
+    payload,
+    label,
+  }: {
+    active?: boolean
+    payload?: Array<{ payload?: FanRow }>
+    label?: string | number
+  }) => {
+    if (!active || !payload?.length) return null
+    const row = payload[0]?.payload
+    if (!row) return null
+    const rows: Array<[string, number]> = [
+      [labels.high, Number(row[highKey])],
+      [labels.median, Number(row[medianKey])],
+      [labels.low, Number(row[lowKey])],
+    ]
+    return (
+      <div
+        className="rounded-lg border px-3 py-2 text-xs shadow-xl"
+        style={{ background: c.surface, borderColor: c.grid }}
+      >
+        {label !== undefined && (
+          <div className="mb-1 font-semibold" style={{ color: c.ink }}>
+            {xFormat ? xFormat(label) : label}
+          </div>
+        )}
+        <div className="space-y-0.5">
+          {rows.map(([name, v], i) => (
+            <div key={name} className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5" style={{ color: c.ink2 }}>
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: col, opacity: i === 1 ? 1 : 0.4 }}
+                />
+                {name}
+              </span>
+              <span className="font-semibold tnum" style={{ color: c.ink }}>
+                {yFormat(v)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <CartesianGrid stroke={c.grid} strokeWidth={1} vertical={false} />
+        <XAxis
+          dataKey={xKey}
+          tickFormatter={xFormat}
+          stroke={c.axis}
+          tick={{ fill: c.mute, fontSize: 11 }}
+          tickLine={false}
+        />
+        <YAxis
+          tickFormatter={yFormat}
+          stroke="transparent"
+          tick={{ fill: c.mute, fontSize: 11 }}
+          tickLine={false}
+          width={64}
+        />
+        <Tooltip content={<FanTooltip />} cursor={{ stroke: c.axis, strokeWidth: 1 }} />
+        <Area
+          dataKey={(row: FanRow) => [Number(row[lowKey]), Number(row[highKey])]}
+          name="banda"
+          stroke="none"
+          fill={col}
+          fillOpacity={0.14}
+          activeDot={false}
+          legendType="none"
+          tooltipType="none"
+        />
+        <Line
+          dataKey={medianKey}
+          name={labels.median}
+          stroke={col}
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   )
 }
