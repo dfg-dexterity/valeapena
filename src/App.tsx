@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { Briefcase, Car, Home as HomeIcon, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
+import { Briefcase, Car, Home as HomeIcon, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
 
 const Carro = lazy(() => import('./pages/Carro'))
 const Imovel = lazy(() => import('./pages/Imovel'))
+const Morar = lazy(() => import('./pages/Morar'))
 const Investimentos = lazy(() => import('./pages/Investimentos'))
 const Risco = lazy(() => import('./pages/Risco'))
 const PjClt = lazy(() => import('./pages/PjClt'))
@@ -25,6 +26,13 @@ export const TOOLS = [
     title: 'Financiamento imobiliário',
     desc: 'SAC × Price com taxas atuais dos bancos, seguros, custos de cartório e renda mínima.',
     icon: HomeIcon,
+  },
+  {
+    path: '/morar',
+    label: 'Morar',
+    title: 'Morar: alugar × comprar',
+    desc: 'Aluguel ou compra do imóvel? Com valorização média, ITBI, corretagem, manutenção e custo de oportunidade.',
+    icon: KeyRound,
   },
   {
     path: '/investimentos',
@@ -126,6 +134,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/carro" element={<Carro />} />
             <Route path="/imovel" element={<Imovel />} />
+            <Route path="/morar" element={<Morar />} />
             <Route path="/investimentos" element={<Investimentos />} />
             <Route path="/risco" element={<Risco />} />
             <Route path="/pj-clt" element={<PjClt />} />

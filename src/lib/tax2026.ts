@@ -131,6 +131,18 @@ export function irDividendosMes(valorMes: number): number {
   return valorMes > 50000 ? valorMes * 0.1 : 0
 }
 
+/* ============================== MEI ============================== */
+
+/** Teto de receita bruta anual do MEI (vigente em 2026; ≈ R$ 6.750/mês). */
+export const MEI_LIMITE_ANUAL_2026 = 81000
+
+/**
+ * DAS mensal fixo do MEI prestador de serviços em 2026:
+ * 5% do salário mínimo (INSS) + R$ 5,00 de ISS = R$ 86,05.
+ * (Comércio/indústria paga R$ 1,00 de ICMS no lugar/além do ISS.)
+ */
+export const MEI_DAS_SERVICOS_2026 = Math.round((SALARIO_MINIMO_2026 * 0.05 + 5) * 100) / 100
+
 /* ==================== Encargos do empregador (CLT) ==================== */
 
 /**

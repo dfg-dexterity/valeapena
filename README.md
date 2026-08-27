@@ -6,11 +6,12 @@ Calculadoras para decisões financeiras no Brasil — compare as duas pontas de 
 
 | Ferramenta | O que responde |
 |---|---|
-| 🚗 **Carro: alugar × comprar** | Assinatura 0 km ou compra (à vista/financiada)? Com depreciação por categoria, seguro, manutenção, IPVA por estado e custo de oportunidade — comparação em valor presente com break-even. |
+| 🚗 **Carro: alugar × comprar** | Assinatura 0 km ou compra (0 km ou seminovo de 1–2 anos, à vista/financiada)? Com depreciação por categoria, seguro, manutenção, IPVA por estado, dias sem carro, cashback do cartão e custo de oportunidade — comparação em valor presente com break-even. |
 | 🏠 **Financiamento imobiliário** | Simulador SBPE completo: SAC × Price, taxas atuais dos bancos, TR, seguros MIP/DFI, CET, custos de cartório/ITBI, renda mínima e regras do novo modelo de crédito (teto SFH R$ 2,25 mi). |
+| 🔑 **Morar: alugar × comprar** | Continuar no aluguel ou comprar o imóvel? Valorização média, reajuste do aluguel, ITBI, corretagem na venda, manutenção do proprietário e custo de oportunidade — com break-even e aluguel de equilíbrio. |
 | 🏦 **Renda fixa na prática** | CDB (grande/médio/pequeno), LCI/LCA, LC, Tesouro Selic/Prefixado/IPCA+ e fundos — todos **líquidos** de IR regressivo, custódia e come-cotas, lado a lado. |
 | 📈 **Risco × retorno** | Da poupança ao Bitcoin: simulação de Monte Carlo (2.000 cenários) com bandas de percentil — o que você ganha na mediana e o que arrisca no cenário ruim. |
-| 💼 **PJ × CLT** | Líquido real dos dois lados com as tabelas de 2026 (INSS, IRRF com isenção até R$ 5 mil, Simples Nacional com Fator R), benefícios, férias, FGTS — e o custo do deslocamento por modalidade (presencial/híbrido/remoto). |
+| 💼 **PJ × CLT** | Líquido real dos dois lados com as tabelas de 2026 (INSS, IRRF com isenção até R$ 5 mil, Simples Nacional com Fator R e tabelas dos Anexos III/V, MEI com DAS fixo e teto), benefícios, férias, FGTS — e os custos de deslocamento e home office por modalidade. |
 | 💻 **Upgrade de computador** | Um computador mais rápido se paga? Payback, VPL e quanto custa cada mês de espera. |
 
 ## Dados

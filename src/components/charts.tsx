@@ -262,7 +262,15 @@ export function VBarChart({
           content={<ChartTooltip valueFormat={yFormat} labelFormat={xFormat} />}
           cursor={{ fill: c.grid, opacity: 0.35 }}
         />
-        {series.length > 1 && <Legend wrapperStyle={legendStyle} iconType="circle" />}
+        {series.length > 1 && (
+          <Legend
+            wrapperStyle={legendStyle}
+            iconType="circle"
+            // sort estável com chave constante: mantém a ordem declarada das
+            // séries (o default do Recharts v3 ordena alfabeticamente)
+            itemSorter={() => 0}
+          />
+        )}
         {series.map((s, i) => {
           const color = s.color ?? c.series[s.colorIndex ?? i]
           const isTop = stacked ? i === series.length - 1 : true

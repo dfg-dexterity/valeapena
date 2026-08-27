@@ -57,10 +57,16 @@ export default function Carro() {
   const [horizonteAnos, setHorizonteAnos] = useState(5)
   const [uf, setUf] = useState('SP')
   const [modoCompra, setModoCompra] = useState<ModoCompra>('avista')
+  /** idade do carro na compra: 0 (0 km), 1 ou 2 anos (seminovo) */
+  const [idadeCompra, setIdadeCompra] = useState(0)
   const [entradaPct, setEntradaPct] = useState(20)
   const [prazoFin, setPrazoFin] = useState(48)
   const [taxaFinUser, setTaxaFinUser] = useState<number | null>(null)
   const [assinaturaMes, setAssinaturaMes] = useState(cat0.assinaturaMes)
+  /** dias por ano em que você ficaria sem contrato de assinatura (viagens, férias) */
+  const [diasSemCarroAno, setDiasSemCarroAno] = useState(0)
+  /** cashback do cartão de crédito, % sobre o que pode ser pago no cartão */
+  const [cashbackPct, setCashbackPct] = useState(1)
   const [custoOpUser, setCustoOpUser] = useState<number | null>(null)
 
   /* ------------------------ premissas avançadas ------------------------ */
@@ -102,14 +108,32 @@ export default function Carro() {
     const dep2 = Math.min(Math.max(depSegPct, 0), 99) / 100
     const f1 = Math.pow(1 - dep1, 1 / 12)
     const f2 = Math.pow(1 - dep2, 1 / 12)
+    /** valor de mercado do carro com `m` meses de idade (contados do 0 km) */
     const valorEm = (m: number) =>
       valorCarro * Math.pow(f1, Math.min(m, 12)) * Math.pow(f2, Math.max(0, m - 12))
 
+    // seminovo: você compra o carro já com `idadeM` meses — paga o valor
+    // depreciado e pula a perda forte do 1º ano
+    const idadeM = Math.min(2, Math.max(0, Math.round(idadeCompra))) * 12
+    const precoCompra = valorEm(idadeM)
+    /** valor do carro no mês `m` da POSSE (idade total = idadeM + m) */
+    const valorPosse = (m: number) => valorEm(idadeM + m)
+
+    // cashback do cartão: vale para o que dá para pagar no cartão —
+    // assinatura, seguro e manutenção (compra, parcelas e IPVA ficam fora)
+    const cb = Math.min(Math.max(cashbackPct, 0), 10) / 100
+
+    // dias sem carro: na assinatura/aluguel mensal dá para devolver o carro ou
+    // não renovar nesses períodos — a mensalidade efetiva cai proporcionalmente
+    const fracSemCarro = Math.min(Math.max(diasSemCarroAno, 0), 365) / 365
+    const assinaturaEfetiva = Math.max(0, assinaturaMes) * (1 - fracSemCarro)
+    const subMes = assinaturaEfetiva * (1 - cb)
+
     const financiado = modoCompra === 'financiado'
     const entrada = financiado
-      ? (valorCarro * Math.min(Math.max(entradaPct, 0), 100)) / 100
-      : valorCarro
-    const principal = Math.max(0, valorCarro - entrada)
+      ? (precoCompra * Math.min(Math.max(entradaPct, 0), 100)) / 100
+      : precoCompra
+    const principal = Math.max(0, precoCompra - entrada)
     const nFin = Math.max(1, Math.round(prazoFin))
     const parcelas = financiado ? priceSchedule(principal, aToM(Math.max(0, taxaFin)), nFin) : []
     const parcelaFin = parcelas[0]?.parcela ?? 0
@@ -137,9 +161,10 @@ export default function Carro() {
 
     for (let m = 1; m <= N; m++) {
       const df = Math.pow(1 + d, -m)
-      const v = valorEm(m)
-      const seguroM = ((Math.max(0, seguroPctAno) / 100) * v) / 12
-      const manutM = Math.max(0, manutencaoAno) / 12
+      const v = valorPosse(m)
+      // seguro e manutenção já líquidos do cashback do cartão
+      const seguroM = (((Math.max(0, seguroPctAno) / 100) * v) / 12) * (1 - cb)
+      const manutM = (Math.max(0, manutencaoAno) / 12) * (1 - cb)
       const ipvaM = (estadoSel.aliquota * v) / 12 + Math.max(0, licenciamento) / 12
       const parcela = financiado && m <= nFin ? parcelas[m - 1].parcela : 0
       const saldo = financiado && m <= nFin ? parcelas[m - 1].saldo : 0
@@ -149,7 +174,7 @@ export default function Carro() {
       pvIpva += ipvaM * df
       pvParcelas += parcela * df
       pvSaidasBuy += (seguroM + manutM + ipvaM + parcela) * df
-      pvSub += Math.max(0, assinaturaMes) * df
+      pvSub += subMes * df
 
       gastoAnoBuy[Math.ceil(m / 12) - 1] += seguroM + manutM + ipvaM + parcela
 
@@ -162,7 +187,7 @@ export default function Carro() {
           ano: m / 12,
           valorFim: v,
           gastoBuy: gastoAnoBuy[m / 12 - 1],
-          gastoSub: Math.max(0, assinaturaMes) * 12,
+          gastoSub: subMes * 12,
           vpBuy: comprarSeVender,
           vpSub: pvSub,
         })
@@ -170,14 +195,14 @@ export default function Carro() {
     }
 
     const dfN = Math.pow(1 + d, -N)
-    const revenda = valorEm(N)
+    const revenda = valorPosse(N)
     const saldoN = financiado && N <= nFin ? parcelas[N - 1].saldo : 0
     const custoBuy = pvSaidasBuy - (revenda - saldoN) * dfN
     const custoSub = pvSub
 
     // decomposição em VP — as fatias somam exatamente o custo total de comprar
-    const depVP = valorCarro - revenda * dfN
-    const jurosVP = financiado ? entrada + pvParcelas + saldoN * dfN - valorCarro : 0
+    const depVP = precoCompra - revenda * dfN
+    const jurosVP = financiado ? entrada + pvParcelas + saldoN * dfN - precoCompra : 0
 
     // Break-even robusto: as linhas podem se cruzar mais de uma vez (ex.: depreciação
     // baixa no 1º ano e alta nos seguintes). O break-even honesto é o primeiro mês a
@@ -202,6 +227,8 @@ export default function Carro() {
       financiado,
       entrada,
       parcelaFin,
+      precoCompra,
+      assinaturaEfetiva,
       revenda,
       saldoN,
       custoBuy,
@@ -226,6 +253,7 @@ export default function Carro() {
     depAno1Pct,
     depSegPct,
     valorCarro,
+    idadeCompra,
     modoCompra,
     entradaPct,
     prazoFin,
@@ -235,11 +263,18 @@ export default function Carro() {
     estadoSel.aliquota,
     licenciamento,
     assinaturaMes,
+    diasSemCarroAno,
+    cashbackPct,
     kmMes,
   ])
 
   /* ------------------------------ veredito ------------------------------ */
-  const compraLabel = sim.financiado ? 'comprar financiado' : 'comprar à vista'
+  const seminovoTxt =
+    idadeCompra === 0 ? '' : ` o seminovo de ${idadeCompra} ${idadeCompra === 1 ? 'ano' : 'anos'}`
+  const compraLabel =
+    (sim.financiado ? 'comprar' : 'comprar à vista') +
+    seminovoTxt +
+    (sim.financiado ? ' financiado' : '')
   const buyWins = sim.diff > 0
   const empate = Math.abs(sim.diff) < Math.max(sim.custoBuy, sim.custoSub, 1) * 0.02
 
@@ -302,14 +337,14 @@ export default function Carro() {
     { opcao: 'Assinatura', dep: 0, jur: 0, seg: 0, man: 0, ipva: 0, ass: sim.custoSub },
   ]
 
-  const pctRevenda = valorCarro > 0 ? (sim.revenda / valorCarro) * 100 : 0
+  const pctRevenda = sim.precoCompra > 0 ? (sim.revenda / sim.precoCompra) * 100 : 0
 
   /* -------------------------------- página ------------------------------- */
   return (
     <ToolPage
       icon={<Car size={20} />}
       title="Carro: alugar × comprar"
-      description="Comprar (à vista ou financiado) ou assinar um 0 km? Comparação em valor presente, com depreciação, IPVA, seguro e custo de oportunidade."
+      description="Comprar (0 km ou seminovo, à vista ou financiado) ou assinar um 0 km? Comparação em valor presente, com depreciação, IPVA, seguro, cashback e custo de oportunidade."
       inputs={
         <>
           <Card title="O carro e o uso">
@@ -379,6 +414,25 @@ export default function Carro() {
           <Card title="Compra × assinatura">
             <div className="space-y-4">
               <Segmented
+                label="Idade do carro na compra"
+                hint="0 km ou seminovo. Comprando com 1–2 anos você paga o valor já depreciado e pula a perda forte do 1º ano — o preço de compra é estimado pela curva de depreciação sobre o 0 km de referência. A assinatura segue sendo de um 0 km."
+                options={[
+                  { value: '0', label: '0 km' },
+                  { value: '1', label: '1 ano' },
+                  { value: '2', label: '2 anos' },
+                ]}
+                value={String(idadeCompra) as '0' | '1' | '2'}
+                onChange={v => setIdadeCompra(Number(v))}
+              />
+              {idadeCompra > 0 && (
+                <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] leading-relaxed text-mute">
+                  Preço de compra estimado:{' '}
+                  <strong className="tnum text-ink">{brl(sim.precoCompra)}</strong> — o 0 km de{' '}
+                  {brl(valorCarro)} menos a depreciação de {idadeCompra}{' '}
+                  {idadeCompra === 1 ? 'ano' : 'anos'}
+                </p>
+              )}
+              <Segmented
                 label="Forma de compra"
                 options={[
                   { value: 'avista', label: 'À vista' },
@@ -435,6 +489,26 @@ export default function Carro() {
                 step={50}
                 format={v => `${brl(v)}/mês`}
                 hint="Mensalidade de assinatura de carro 0 km (Localiza Meoo, Movida etc., cotações 2026). Já inclui IPVA, seguro, manutenção e documentação — por isso esses custos não são somados do lado da assinatura."
+              />
+              <SliderField
+                label="Dias sem carro por ano"
+                value={diasSemCarroAno}
+                onChange={setDiasSemCarroAno}
+                min={0}
+                max={120}
+                step={5}
+                format={v => (v === 0 ? 'nenhum' : `${num(v)} dias`)}
+                hint="Viagens, férias, temporadas de home office… Na assinatura/aluguel mensal você pode devolver o carro ou não renovar nesses períodos — descontamos a mensalidade proporcionalmente. Quem compra paga IPVA, seguro e depreciação mesmo com o carro parado."
+              />
+              <SliderField
+                label="Cashback do cartão"
+                value={cashbackPct}
+                onChange={setCashbackPct}
+                min={0}
+                max={5}
+                step={0.25}
+                format={v => pct(v, 2)}
+                hint="Cashback do seu cartão de crédito, aplicado ao que dá para pagar no cartão: mensalidade da assinatura, seguro e manutenção. Compra do carro, parcelas do financiamento e IPVA ficam de fora."
               />
               <SliderField
                 label="Custo de oportunidade"
@@ -527,7 +601,11 @@ export default function Carro() {
               label="Assinatura — VP"
               value={sim.custoSub}
               format={brl}
-              sub={`${brl(assinaturaMes)}/mês × ${num(sim.N)} meses`}
+              sub={
+                diasSemCarroAno > 0 || cashbackPct > 0
+                  ? `${brl(sim.assinaturaEfetiva * (1 - cashbackPct / 100))}/mês líquido × ${num(sim.N)} meses`
+                  : `${brl(assinaturaMes)}/mês × ${num(sim.N)} meses`
+              }
               tone={!empate && !buyWins ? 'positive' : 'neutral'}
             />
             <StatTile
@@ -541,7 +619,9 @@ export default function Carro() {
               label="Revenda estimada"
               value={sim.revenda}
               format={brl}
-              sub={`${pct(pctRevenda, 0)} do preço após ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}`}
+              sub={`${pct(pctRevenda, 0)} do preço de compra após ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}${
+                idadeCompra > 0 ? ` (carro com ${idadeCompra + sim.anos} anos)` : ''
+              }`}
             />
           </div>
 
@@ -584,9 +664,11 @@ export default function Carro() {
               height={300}
             />
             <p className="mt-3 text-[11px] leading-relaxed text-mute">
-              Na compra, a depreciação costuma ser o maior custo — o carro que você compra por {brl(valorCarro)}{' '}
-              vale {brl(sim.revenda)} no fim. Na assinatura, IPVA, seguro e manutenção já estão embutidos na
-              mensalidade.
+              Na compra, a depreciação costuma ser o maior custo — o carro que você compra por{' '}
+              {brl(sim.precoCompra)} vale {brl(sim.revenda)} no fim.
+              {idadeCompra > 0 &&
+                ' Comprando seminovo, a fatia de depreciação encolhe: a perda forte do 1º ano ficou com o dono anterior.'}{' '}
+              Na assinatura, IPVA, seguro e manutenção já estão embutidos na mensalidade.
               {jurosCredito > 0 &&
                 ` Sua taxa de financiamento está abaixo do custo de oportunidade: em valor presente, financiar gera um crédito de ${brl(
                   jurosCredito,
@@ -642,6 +724,26 @@ export default function Carro() {
                 Assinatura 0 km (Localiza Meoo, Movida etc.) já inclui IPVA, seguro, manutenção e documentação —
                 nada disso é somado do lado da assinatura. Franquia típica de 1.000–2.000 km/mês.
               </li>
+              {idadeCompra > 0 && (
+                <li>
+                  Compra de seminovo: preço estimado de {brl(sim.precoCompra)} pela curva de depreciação sobre o
+                  0 km de {brl(valorCarro)}. A revenda considera o carro com {idadeCompra + sim.anos} anos no fim
+                  do horizonte. Preços reais de seminovos variam com a tabela FIPE e o estado do carro.
+                </li>
+              )}
+              {diasSemCarroAno > 0 && (
+                <li>
+                  Dias sem carro: {num(diasSemCarroAno)} dias/ano fora do contrato de assinatura → mensalidade
+                  efetiva de {brl(sim.assinaturaEfetiva)}/mês. Pressupõe plano flexível (mensal ou pausável) —
+                  contratos longos de assinatura podem não permitir. Quem compra segue pagando os custos fixos.
+                </li>
+              )}
+              {cashbackPct > 0 && (
+                <li>
+                  Cashback de {pct(cashbackPct, 2)} no cartão, aplicado à assinatura, ao seguro e à manutenção.
+                  Compra do carro, parcelas do financiamento e IPVA não passam pelo cartão.
+                </li>
+              )}
               <li>Combustível fica fora dos dois lados: o gasto é praticamente igual nos dois cenários.</li>
               <li>
                 IPVA de {pct(estadoSel.aliquota * 100, 1)} a.a. ({uf}) sobre o valor venal depreciado +

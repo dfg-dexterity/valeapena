@@ -346,7 +346,16 @@ export function AnimatedNumber({ value, format }: { value: number; format: (v: n
       else fromRef.current = to
     }
     raf.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf.current)
+    // aba oculta pausa o rAF — garante que o valor final sempre chega
+    const fallback = setTimeout(() => {
+      cancelAnimationFrame(raf.current)
+      fromRef.current = to
+      setDisplay(to)
+    }, dur + 150)
+    return () => {
+      cancelAnimationFrame(raf.current)
+      clearTimeout(fallback)
+    }
   }, [value])
   return <span>{format(display)}</span>
 }

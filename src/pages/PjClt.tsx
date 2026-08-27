@@ -17,6 +17,8 @@ import { VLineChart } from '../components/charts'
 import { brl, brlCents, brlCompact, num, pct } from '../lib/format'
 import {
   FGTS_ALIQUOTA,
+  MEI_DAS_SERVICOS_2026,
+  MEI_LIMITE_ANUAL_2026,
   SALARIO_MINIMO_2026,
   SIMPLES_ANEXO_III,
   SIMPLES_ANEXO_V,
@@ -25,6 +27,7 @@ import {
   inssProLabore,
   irDividendosMes,
   irrf2026,
+  type FaixaSimples,
 } from '../lib/tax2026'
 
 /* ============================ modelo ============================ */
@@ -37,6 +40,7 @@ const SEMANAS_MES = 4.345
 const FATURAMENTO_MAX_BUSCA = 1_000_000
 
 type ProLaboreModo = 'minimo' | 'fatorR' | 'custom'
+type RegimePj = 'simples' | 'mei'
 type Modalidade = 'presencial' | 'hibrido' | 'remoto' | 'outro'
 
 function modalidadeDe(dias: number): Modalidade {
@@ -71,6 +75,7 @@ function calculaDesloc(diasSemana: number, minutosDia: number, custoDia: number)
 }
 
 interface PjInputs {
+  regime: RegimePj
   plModo: ProLaboreModo
   plCustom: number
   feriasDias: number
@@ -79,6 +84,8 @@ interface PjInputs {
   planoSaude: number
   dependentes: number
   desloc: Desloc
+  /** custo extra mensal de trabalhar de casa (energia, internet…) */
+  homeOfficeMes: number
 }
 
 function calculaPj(faturamento: number, p: PjInputs) {
@@ -86,29 +93,50 @@ function calculaPj(faturamento: number, p: PjInputs) {
   // férias sem faturar: cada dia parado é receita que não entra
   const fatEfetivo = fat * (1 - Math.min(365, Math.max(0, p.feriasDias)) / 365)
   const rbt12 = fatEfetivo * 12
-  const proLabore =
-    p.plModo === 'minimo'
-      ? SALARIO_MINIMO_2026
-      : p.plModo === 'fatorR'
-        ? Math.max(SALARIO_MINIMO_2026, 0.28 * fat)
-        : Math.max(0, p.plCustom)
-  const fatorR = rbt12 > 0 ? (proLabore * 12) / rbt12 : 1
-  const anexoIII = fatorR >= 0.28
-  const aliquota = aliquotaEfetivaSimples(rbt12, anexoIII ? SIMPLES_ANEXO_III : SIMPLES_ANEXO_V)
-  const das = aliquota * fatEfetivo
-  const inssPl = inssProLabore(proLabore)
-  const irrfPl = irrf2026(proLabore, { inss: inssPl, dependentes: p.dependentes })
+
+  // MEI: acima do teto anual você é desenquadrado — a conta cai
+  // automaticamente no Simples com pró-labore mínimo
+  const desenquadrado = p.regime === 'mei' && rbt12 > MEI_LIMITE_ANUAL_2026
+  const regimeEfetivo: RegimePj = p.regime === 'mei' && !desenquadrado ? 'mei' : 'simples'
+  const plModoEfetivo: ProLaboreModo = p.regime === 'mei' ? 'minimo' : p.plModo
+
+  let proLabore = 0
+  let fatorR = 0
+  let anexoIII = false
+  let aliquota = 0
+  let das = MEI_DAS_SERVICOS_2026
+  let inssPl = 0
+  let irrfPl = 0
+  if (regimeEfetivo === 'simples') {
+    proLabore =
+      plModoEfetivo === 'minimo'
+        ? SALARIO_MINIMO_2026
+        : plModoEfetivo === 'fatorR'
+          ? Math.max(SALARIO_MINIMO_2026, 0.28 * fat)
+          : Math.max(0, p.plCustom)
+    fatorR = rbt12 > 0 ? (proLabore * 12) / rbt12 : 1
+    anexoIII = fatorR >= 0.28
+    aliquota = aliquotaEfetivaSimples(rbt12, anexoIII ? SIMPLES_ANEXO_III : SIMPLES_ANEXO_V)
+    das = aliquota * fatEfetivo
+    inssPl = inssProLabore(proLabore)
+    irrfPl = irrf2026(proLabore, { inss: inssPl, dependentes: p.dependentes })
+  }
   const plLiquido = proLabore - inssPl - irrfPl
   // sobra distribuível = receita − DAS − pró-labore − despesas da empresa
   const sobra = fatEfetivo - das - proLabore - p.contador - p.outrosCustos
-  const irDiv = sobra > 0 ? irDividendosMes(sobra) : 0
+  // MEI: retiradas sem IR na prática (32% do faturamento de serviços é lucro
+  // isento; o restante fica abaixo da isenção de R$ 5 mil/mês dentro do teto)
+  const irDiv = regimeEfetivo === 'mei' ? 0 : sobra > 0 ? irDividendosMes(sobra) : 0
   const dividendosLiquidos = sobra - irDiv
   const liquidoBolso = plLiquido + dividendosLiquidos - p.planoSaude
   const valorHora = liquidoBolso > 0 ? liquidoBolso / HORAS_MES : 0
   const custoDesloc = p.desloc.horasMes * valorHora + p.desloc.dinheiroMes
-  const final = liquidoBolso - custoDesloc
-  const horaEfetiva = (liquidoBolso - p.desloc.dinheiroMes) / (HORAS_MES + p.desloc.horasMes)
+  const final = liquidoBolso - custoDesloc - p.homeOfficeMes
+  const horaEfetiva =
+    (liquidoBolso - p.desloc.dinheiroMes - p.homeOfficeMes) / (HORAS_MES + p.desloc.horasMes)
   return {
+    regimeEfetivo,
+    desenquadrado,
     fatEfetivo,
     rbt12,
     proLabore,
@@ -141,6 +169,47 @@ const OPCOES_MODALIDADE: Array<{ value: Modalidade; label: ReactNode }> = [
   { value: 'remoto', label: 'Remoto' },
 ]
 
+/** Tabela de um anexo do Simples com a faixa atual destacada. */
+function TabelaAnexo({
+  titulo,
+  faixas,
+  ativa,
+  rbt12,
+}: {
+  titulo: ReactNode
+  faixas: FaixaSimples[]
+  /** true quando a simulação atual tributa por este anexo */
+  ativa: boolean
+  rbt12: number
+}) {
+  const idx = Math.max(
+    0,
+    faixas.findIndex(f => rbt12 <= f.ate) === -1 ? faixas.length - 1 : faixas.findIndex(f => rbt12 <= f.ate),
+  )
+  const rows = faixas.map((f, i) => {
+    const de = i === 0 ? 0 : faixas[i - 1].ate
+    const destaque = ativa && i === idx
+    const wrap = (t: ReactNode) =>
+      destaque ? <strong className="text-accent">{t}</strong> : <span>{t}</span>
+    return [
+      wrap(`${i + 1}ª${destaque ? ' ◂' : ''}`),
+      wrap(i === 0 ? `até ${brlCompact(f.ate)}` : `${brlCompact(de)} a ${brlCompact(f.ate)}`),
+      wrap(pct(f.aliquota * 100, 1)),
+      wrap(brl(f.deduzir)),
+    ]
+  })
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-semibold text-ink">{titulo}</h4>
+      <DataTable
+        columns={['Faixa', 'Receita bruta 12m', 'Alíq. nominal', 'A deduzir']}
+        rows={rows}
+        align={['l', 'l', 'r', 'r']}
+      />
+    </div>
+  )
+}
+
 /* ============================ página ============================ */
 
 export default function PjClt() {
@@ -152,17 +221,19 @@ export default function PjClt() {
   const [dependentes, setDependentes] = useState(0)
   // PJ
   const [faturamento, setFaturamento] = useState(13000)
+  const [regime, setRegime] = useState<RegimePj>('simples')
   const [plModo, setPlModo] = useState<ProLaboreModo>('fatorR')
   const [plCustom, setPlCustom] = useState(3000)
   const [planoPj, setPlanoPj] = useState(800)
   const [feriasDias, setFeriasDias] = useState(30)
   const [contador, setContador] = useState(250)
   const [outrosCustos, setOutrosCustos] = useState(0)
-  // deslocamento
+  // deslocamento e home office
   const [diasClt, setDiasClt] = useState(5)
   const [diasPj, setDiasPj] = useState(0)
   const [minutosDia, setMinutosDia] = useState(90)
   const [custoTransporteDia, setCustoTransporteDia] = useState(20)
+  const [custoHomeDia, setCustoHomeDia] = useState(10)
 
   const calc = useMemo(() => {
     /* ---------- CLT ---------- */
@@ -178,8 +249,12 @@ export default function PjClt() {
     const dClt = calculaDesloc(diasClt, minutosDia, custoTransporteDia)
     const valorHoraClt = cltPreDesloc > 0 ? cltPreDesloc / HORAS_MES : 0
     const custoDeslocClt = dClt.horasMes * valorHoraClt + dClt.dinheiroMes
-    const cltFinal = cltPreDesloc - custoDeslocClt
-    const horaEfetivaClt = (cltPreDesloc - dClt.dinheiroMes) / (HORAS_MES + dClt.horasMes)
+    // dias de home office por semana (semana útil de 5 dias) × custo extra/dia
+    const diasCasa = (noEscritorio: number) => Math.max(0, 5 - Math.min(5, Math.max(0, noEscritorio)))
+    const homeClt = diasCasa(diasClt) * SEMANAS_MES * Math.max(0, custoHomeDia)
+    const homePj = diasCasa(diasPj) * SEMANAS_MES * Math.max(0, custoHomeDia)
+    const cltFinal = cltPreDesloc - custoDeslocClt - homeClt
+    const horaEfetivaClt = (cltPreDesloc - dClt.dinheiroMes - homeClt) / (HORAS_MES + dClt.horasMes)
     // FGTS: 8% sobre 12 salários + 13º + ⅓ férias ≈ 13,33 salários/ano
     const fgtsAnual = FGTS_ALIQUOTA * Math.max(0, salario) * (13 + 1 / 3)
     const extraMedia = liquidoMedio - normal.liquido
@@ -187,6 +262,7 @@ export default function PjClt() {
     /* ---------- PJ ---------- */
     const dPj = calculaDesloc(diasPj, minutosDia, custoTransporteDia)
     const pjInputs: PjInputs = {
+      regime,
       plModo,
       plCustom,
       feriasDias,
@@ -195,6 +271,7 @@ export default function PjClt() {
       planoSaude: Math.max(0, planoPj),
       dependentes,
       desloc: dPj,
+      homeOfficeMes: homePj,
     }
     const pj = calculaPj(faturamento, pjInputs)
 
@@ -253,6 +330,8 @@ export default function PjClt() {
       cltPreDesloc,
       dClt,
       custoDeslocClt,
+      homeClt,
+      homePj,
       cltFinal,
       horaEfetivaClt,
       fgtsAnual,
@@ -273,7 +352,9 @@ export default function PjClt() {
     diasPj,
     minutosDia,
     custoTransporteDia,
+    custoHomeDia,
     faturamento,
+    regime,
     plModo,
     plCustom,
     feriasDias,
@@ -284,6 +365,8 @@ export default function PjClt() {
 
   const { pj, cltFinal, diff, diffPct, empate, breakEven } = calc
   const anexoTxt = pj.anexoIII ? 'Anexo III' : 'Anexo V'
+  const ehMei = pj.regimeEfetivo === 'mei'
+  const regimeTxt = ehMei ? 'no MEI' : `no Simples (${anexoTxt})`
   const pjVence = diff > 0
   const pctTxt = Number.isFinite(diffPct) ? ` — ${pct(diffPct)} a mais` : ''
 
@@ -296,8 +379,8 @@ export default function PjClt() {
   const verdictDetail = empate
     ? `A diferença é de só ${brlCents(Math.abs(diff))}/mês. Com números tão próximos, decida por estabilidade, liquidez do FGTS e apetite a risco — não pela planilha.`
     : pjVence
-      ? `Faturando ${brl(faturamento)} no Simples (${anexoTxt}), sobram ${brl(pj.final)}/mês contra ${brl(cltFinal)} do pacote CLT${pctTxt} — já contando benefícios, 13º, férias e o custo do deslocamento.`
-      : `O pacote CLT entrega ${brl(cltFinal)}/mês contra ${brl(pj.final)} do PJ faturando ${brl(faturamento)}${pctTxt} — já contando benefícios, 13º, férias e o custo do deslocamento.`
+      ? `Faturando ${brl(faturamento)} ${regimeTxt}, sobram ${brl(pj.final)}/mês contra ${brl(cltFinal)} do pacote CLT${pctTxt} — já contando benefícios, 13º, férias, deslocamento e home office.`
+      : `O pacote CLT entrega ${brl(cltFinal)}/mês contra ${brl(pj.final)} do PJ faturando ${brl(faturamento)} ${regimeTxt}${pctTxt} — já contando benefícios, 13º, férias, deslocamento e home office.`
 
   /* ---------- waterfalls ---------- */
   const rowsClt: ReactNode[][] = [
@@ -320,6 +403,7 @@ export default function PjClt() {
     ],
     ['Benefícios (VR/VA, saúde, outros)', mais(calc.beneficios)],
     ['Deslocamento (tempo + transporte)', menos(calc.custoDeslocClt)],
+    ['Home office (energia, internet…)', menos(calc.homeClt)],
     [forte('Total comparável/mês'), forte(brlCents(cltFinal))],
   ]
 
@@ -333,21 +417,41 @@ export default function PjClt() {
       </span>,
       brlCents(pj.fatEfetivo),
     ],
-    [`DAS — Simples ${anexoTxt} (${pct(pj.aliquota * 100)})`, menos(pj.das)],
-    ['INSS s/ pró-labore (11%)', menos(pj.inssPl)],
-    ['IRRF s/ pró-labore', menos(pj.irrfPl)],
-    [
-      <span key="div" className="inline-flex items-center gap-1.5">
-        IR s/ dividendos
-        <InfoTip text="Lei 15.270/2025: dividendos ficam isentos até R$ 50 mil/mês por sócio na mesma empresa; acima disso, 10% na fonte sobre o total do mês." />
-      </span>,
-      menos(pj.irDiv),
-    ],
+    ...(ehMei
+      ? ([
+          [
+            <span key="dasmei" className="inline-flex items-center gap-1.5">
+              DAS — MEI (fixo)
+              <InfoTip text="Guia mensal fixa do MEI de serviços em 2026: 5% do salário mínimo (INSS) + R$ 5,00 de ISS = R$ 86,05, independente do faturamento dentro do teto." />
+            </span>,
+            menos(pj.das),
+          ],
+          [
+            <span key="ret" className="inline-flex items-center gap-1.5">
+              IR sobre retiradas
+              <InfoTip text="Na prática, zero: 32% do faturamento de serviços é lucro isento (presunção), e o restante — dentro do teto do MEI — fica abaixo da isenção mensal de R$ 5.000 da Lei 15.270/2025." />
+            </span>,
+            brlCents(0),
+          ],
+        ] as ReactNode[][])
+      : ([
+          [`DAS — Simples ${anexoTxt} (${pct(pj.aliquota * 100)})`, menos(pj.das)],
+          ['INSS s/ pró-labore (11%)', menos(pj.inssPl)],
+          ['IRRF s/ pró-labore', menos(pj.irrfPl)],
+          [
+            <span key="div" className="inline-flex items-center gap-1.5">
+              IR s/ dividendos
+              <InfoTip text="Lei 15.270/2025: dividendos ficam isentos até R$ 50 mil/mês por sócio na mesma empresa; acima disso, 10% na fonte sobre o total do mês." />
+            </span>,
+            menos(pj.irDiv),
+          ],
+        ] as ReactNode[][])),
     ['Contador', menos(contador)],
     ['Outros custos PJ', menos(outrosCustos)],
     ['Plano de saúde (do bolso)', menos(planoPj)],
     [forte('Líquido no bolso'), forte(brlCents(pj.liquidoBolso))],
     ['Deslocamento (tempo + transporte)', menos(pj.custoDesloc)],
+    ['Home office (energia, internet…)', menos(calc.homePj)],
     [forte('Total comparável/mês'), forte(brlCents(pj.final))],
   ]
 
@@ -423,33 +527,60 @@ export default function PjClt() {
                 format={brl}
                 hint="Valor bruto das notas emitidas por mês. Regra de bolso do mercado: PJ costuma pedir 1,3–1,5× o bruto CLT."
               />
-              <Segmented<ProLaboreModo>
-                label="Pró-labore"
-                hint="Fator R (LC 123/2006) = folha de 12 meses ÷ receita de 12 meses. Com pró-labore ≥ 28% do faturamento a empresa tributa pelo Anexo III (a partir de 6%); abaixo, cai no Anexo V (a partir de 15,5%)."
-                value={plModo}
-                onChange={setPlModo}
+              <Segmented<RegimePj>
+                label="Regime da PJ"
+                hint="Simples Nacional: DAS percentual pela tabela do anexo, com pró-labore obrigatório. MEI: sem pró-labore, DAS fixo de R$ 86,05/mês e teto de R$ 81 mil/ano (≈ R$ 6.750/mês). Atenção: atividades intelectuais (dev, consultoria, engenharia…) NÃO podem ser MEI — a lista de ocupações permitidas é restrita."
+                value={regime}
+                onChange={setRegime}
                 options={[
-                  { value: 'minimo', label: 'Mínimo' },
-                  { value: 'fatorR', label: '28% (Fator R)' },
-                  { value: 'custom', label: 'Outro' },
+                  { value: 'simples', label: 'Simples' },
+                  { value: 'mei', label: 'MEI' },
                 ]}
               />
-              {plModo === 'custom' ? (
-                <SliderField
-                  label="Pró-labore mensal"
-                  value={plCustom}
-                  onChange={setPlCustom}
-                  min={SALARIO_MINIMO_2026}
-                  max={30000}
-                  step={100}
-                  format={brl}
-                  hint="O mínimo legal é 1 salário mínimo (R$ 1.621 em 2026). Pró-labore maior paga mais INSS/IRRF, mas pode garantir o Anexo III."
-                />
-              ) : (
-                <p className="text-[11px] leading-relaxed text-mute">
-                  Pró-labore de <strong className="tnum text-ink-2">{brlCents(pj.proLabore)}</strong> → Fator R{' '}
-                  {pct(Math.min(pj.fatorR, 9.99) * 100, 0)} · {anexoTxt}
-                </p>
+              {regime === 'mei' &&
+                (pj.desenquadrado ? (
+                  <p className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+                    Faturamento acima do teto do MEI ({brl(MEI_LIMITE_ANUAL_2026)}/ano ≈ R$ 6.750/mês):
+                    você seria <strong className="text-ink">desenquadrado</strong>. O cálculo abaixo já usa
+                    o Simples Nacional com pró-labore mínimo.
+                  </p>
+                ) : (
+                  <p className="text-[11px] leading-relaxed text-mute">
+                    DAS fixo de <strong className="tnum text-ink-2">{brlCents(MEI_DAS_SERVICOS_2026)}</strong>
+                    /mês, sem pró-labore. Teto: {brl(MEI_LIMITE_ANUAL_2026)}/ano.
+                  </p>
+                ))}
+              {regime === 'simples' && (
+                <>
+                  <Segmented<ProLaboreModo>
+                    label="Pró-labore"
+                    hint="Fator R (LC 123/2006) = folha de 12 meses ÷ receita de 12 meses. Com pró-labore ≥ 28% do faturamento a empresa tributa pelo Anexo III (a partir de 6%); abaixo, cai no Anexo V (a partir de 15,5%)."
+                    value={plModo}
+                    onChange={setPlModo}
+                    options={[
+                      { value: 'minimo', label: 'Mínimo' },
+                      { value: 'fatorR', label: '28% (Fator R)' },
+                      { value: 'custom', label: 'Outro' },
+                    ]}
+                  />
+                  {plModo === 'custom' ? (
+                    <SliderField
+                      label="Pró-labore mensal"
+                      value={plCustom}
+                      onChange={setPlCustom}
+                      min={SALARIO_MINIMO_2026}
+                      max={30000}
+                      step={100}
+                      format={brl}
+                      hint="O mínimo legal é 1 salário mínimo (R$ 1.621 em 2026). Pró-labore maior paga mais INSS/IRRF, mas pode garantir o Anexo III."
+                    />
+                  ) : (
+                    <p className="text-[11px] leading-relaxed text-mute">
+                      Pró-labore de <strong className="tnum text-ink-2">{brlCents(pj.proLabore)}</strong> → Fator R{' '}
+                      {pct(Math.min(pj.fatorR, 9.99) * 100, 0)} · {anexoTxt}
+                    </p>
+                  )}
+                </>
               )}
               <SliderField
                 label="Plano de saúde (do seu bolso)"
@@ -513,9 +644,20 @@ export default function PjClt() {
                 format={brl}
                 hint="Passagens, combustível + estacionamento ou app, por dia presencial. Duas tarifas de ônibus em SP ≈ R$ 10,60."
               />
+              <SliderField
+                label="Custo do home office/dia"
+                value={custoHomeDia}
+                onChange={setCustoHomeDia}
+                min={0}
+                max={100}
+                step={1}
+                format={brl}
+                hint="Custo extra de trabalhar de casa num dia remoto: energia (ar-condicionado, equipamentos), internet melhor, café… Aplicado aos dias da semana útil fora do escritório, nos dois lados. Se a empresa paga auxílio home office no CLT, lance em 'Outros benefícios'."
+              />
               <p className="text-[11px] text-mute">
-                Custo estimado — CLT: <span className="tnum">{menos(calc.custoDeslocClt)}</span>/mês · PJ:{' '}
-                <span className="tnum">{menos(pj.custoDesloc)}</span>/mês
+                Trajeto + home office — CLT:{' '}
+                <span className="tnum">{menos(calc.custoDeslocClt + calc.homeClt)}</span>/mês · PJ:{' '}
+                <span className="tnum">{menos(pj.custoDesloc + calc.homePj)}</span>/mês
               </p>
             </div>
           </Card>
@@ -572,7 +714,13 @@ export default function PjClt() {
             winner={verdictWinner}
             detail={verdictDetail}
             tone={empate ? 'neutral' : 'positive'}
-            badge={`Fator R ${pct(Math.min(pj.fatorR, 9.99) * 100, 0)} · ${anexoTxt}`}
+            badge={
+              ehMei
+                ? 'MEI · DAS fixo'
+                : pj.desenquadrado
+                  ? 'MEI estourado → Simples'
+                  : `Fator R ${pct(Math.min(pj.fatorR, 9.99) * 100, 0)} · ${anexoTxt}`
+            }
           />
 
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -596,12 +744,21 @@ export default function PjClt() {
               format={brl}
               sub="FGTS é patrimônio à parte; o 13º já está diluído no mês"
             />
-            <StatTile
-              label="DAS efetivo (Simples)"
-              value={pj.aliquota * 100}
-              format={v => pct(v, 2)}
-              sub={`${anexoTxt} · ${brlCents(pj.das)}/mês`}
-            />
+            {ehMei ? (
+              <StatTile
+                label="DAS (MEI, guia fixa)"
+                value={pj.das}
+                format={brlCents}
+                sub="5% do salário mínimo + R$ 5 de ISS"
+              />
+            ) : (
+              <StatTile
+                label="DAS efetivo (Simples)"
+                value={pj.aliquota * 100}
+                format={v => pct(v, 2)}
+                sub={`${anexoTxt} · ${brlCents(pj.das)}/mês`}
+              />
+            )}
           </div>
 
           <Card>
@@ -668,6 +825,45 @@ export default function PjClt() {
             </Card>
           </div>
 
+          <Card
+            title="Tabelas do Simples Nacional (2026)"
+            subtitle={
+              ehMei
+                ? 'No MEI o DAS é fixo — estas tabelas passam a valer se você desenquadrar do teto de R$ 81 mil/ano'
+                : `Sua faixa está destacada — RBT12 de ${brl(pj.rbt12)} → alíquota efetiva de ${pct(pj.aliquota * 100, 2)} pelo ${anexoTxt}`
+            }
+          >
+            <div className="grid gap-5 lg:grid-cols-2">
+              <TabelaAnexo
+                titulo={
+                  <>
+                    Anexo III{' '}
+                    <span className="font-normal text-mute">— serviços com Fator R ≥ 28%</span>
+                  </>
+                }
+                faixas={SIMPLES_ANEXO_III}
+                ativa={!ehMei && pj.anexoIII}
+                rbt12={pj.rbt12}
+              />
+              <TabelaAnexo
+                titulo={
+                  <>
+                    Anexo V{' '}
+                    <span className="font-normal text-mute">— serviços com Fator R &lt; 28%</span>
+                  </>
+                }
+                faixas={SIMPLES_ANEXO_V}
+                ativa={!ehMei && !pj.anexoIII}
+                rbt12={pj.rbt12}
+              />
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-mute">
+              Alíquota efetiva = (RBT12 × alíquota nominal − parcela a deduzir) ÷ RBT12, onde RBT12 é a
+              receita bruta dos últimos 12 meses (LC 123/2006, Resolução CGSN 140/2018). O DAS do mês =
+              receita do mês × alíquota efetiva, com ISS já embutido.
+            </p>
+          </Card>
+
           <Card title="Premissas e simplificações">
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-2">
               <li>
@@ -681,6 +877,18 @@ export default function PjClt() {
               <li>
                 PJ no Simples Nacional, Anexo III ou V pela regra do Fator R (LC 123/2006), com ISS embutido no DAS.
                 Dividendos isentos até R$ 50 mil/mês por sócio; acima disso, 10% na fonte (Lei 15.270/2025).
+              </li>
+              <li>
+                MEI (quando selecionado): DAS fixo de {brlCents(MEI_DAS_SERVICOS_2026)}/mês (serviços), sem
+                pró-labore, teto de {brl(MEI_LIMITE_ANUAL_2026)}/ano — acima disso a conta muda sozinha para o
+                Simples com pró-labore mínimo. Retiradas sem IR na prática (32% do faturamento é lucro isento e o
+                restante fica sob a isenção de R$ 5 mil/mês). Atenção: atividades intelectuais (dev, consultoria,
+                engenharia…) não estão na lista de ocupações permitidas do MEI.
+              </li>
+              <li>
+                Home office: {brl(custoHomeDia)}/dia fora do escritório (energia, internet, café), aplicado à
+                semana útil de 5 dias nos dois lados — trabalhar de casa também tem custo, ele só é menor e mais
+                controlável que o do trajeto.
               </li>
               <li>
                 O valor da hora (líquido ÷ 176h) monetiza o tempo de trajeto. Se você não daria uso produtivo a esse
