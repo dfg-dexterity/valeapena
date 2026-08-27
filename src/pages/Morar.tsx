@@ -1,8 +1,10 @@
 /**
- * Morar — Alugar × comprar imóvel.
+ * Morar — Alugar × comprar imóvel (v2: FGTS e custos assimétricos).
  * Compara morar de aluguel vs comprar o mesmo imóvel, em VPL
  * (taxa de desconto = custo de oportunidade líquido de 15% de IR, como no Carro).
  * A linha "comprar" desconta, mês a mês, quanto a venda do imóvel devolveria.
+ * FGTS e caução entram pelo "forgone value": o custo de usar dinheiro preso é
+ * o valor (baixo) que ele deixaria de render, não o CDI.
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { AlertTriangle, KeyRound } from 'lucide-react'
@@ -12,6 +14,7 @@ import {
   DataTable,
   LiveBadge,
   NumberField,
+  SectionTitle,
   Segmented,
   SliderField,
   StatTile,
@@ -29,8 +32,43 @@ const IR_LONGO_PRAZO = 0.15
 /** Aluguel default = 0,45% do valor do imóvel/mês (rental yield ~5,4% a.a., FipeZap). */
 const YIELD_ALUGUEL_MES = 0.0045
 
+/* ---------------- constantes v2 (pesquisa ago/2026) ---------------- */
+/** Rendimento efetivo do FGTS: TR + 3% a.a. + distribuição de resultados do fundo —
+ *  7,09% (2022), 7,78% (2023), 6,05% (2024) e 6,90% (2025) → média ~7,0% a.a.
+ *  Desde o STF (ADI 5090, jun/2024) há piso de IPCA. Fonte: fgts.gov.br. */
+const FGTS_RENDIMENTO_AA_DEFAULT = 7.0
+/** Condomínio de referência: ~0,07% do valor do imóvel/mês, piso R$ 450 —
+ *  média nacional de R$ 527/mês (pesquisa Cerus, 2026). O condomínio ORDINÁRIO
+ *  fica FORA da conta (inquilino paga — art. 23, §1º, Lei 8.245/91); ele só
+ *  serve de base para a cota extraordinária, essa sim do dono. */
+const CONDOMINIO_FRAC_MES = 0.0007
+const CONDOMINIO_PISO_MES = 450
+/** Extraordinárias + fundo de reserva: do PROPRIETÁRIO por lei (Lei 8.245/91,
+ *  art. 22, parágrafo único: obras estruturais, pintura de fachada, fundo de
+ *  reserva) — tipicamente ~10% do boleto de condomínio. */
+const EXTRAORDINARIAS_PCT_DEFAULT = 10
+/** Seguro residencial do dono: faixa de mercado R$ 300–800/ano (cotações 2026). */
+const SEGURO_RESIDENCIAL_ANO_DEFAULT = 500
+/** Seguro-fiança: modalidade líder nas capitais — 31,4% dos contratos novos
+ *  (CRECI-SP, jan/2026); mercado cobra 8–15% do aluguel anual → default 12%. */
+const SEGURO_FIANCA_PCT_DEFAULT = 12
+/** Caução: máximo legal de 3 aluguéis (Lei 8.245/91, art. 38, §2º),
+ *  devolvidos no fim corrigidos pela poupança. */
+const CAUCAO_ALUGUEIS = 3
+/** Seguro incêndio: a lei o atribui ao locador (art. 22, VIII), mas a praxe
+ *  contratual transfere ao inquilino — R$ 15–50/mês ≈ 0,8% do aluguel. */
+const INCENDIO_PCT_DEFAULT = 0.8
+/** Pintura na devolução do imóvel: ~1 aluguel vigente (dever de restituir o
+ *  imóvel como recebeu — art. 23, III; guias 2026: 1–1,5 aluguel). */
+const PINTURA_ALUGUEIS = 1
+/** Mudança local em capital: ~R$ 2.000 (guias de frete/mudança, 2026). */
+const MUDANCA_DEFAULT = 2000
+/** Contrato-padrão de locação de 30 meses → mudança a cada ~3 anos. */
+const MUDANCA_CADA_ANOS_DEFAULT = 3
+
 type ModoCompra = 'avista' | 'financiado'
 type Sistema = 'sac' | 'price'
+type Garantia = 'fiador' | 'fianca' | 'caucao'
 
 /** eixo/tooltip dos gráficos temporais: mês → "hoje", "8m", "12,5 anos" */
 function fmtTempo(v: string | number): string {
@@ -72,6 +110,24 @@ export default function Morar() {
   const [reajusteUser, setReajusteUser] = useState<number | null>(null)
   const [custoOpUser, setCustoOpUser] = useState<number | null>(null)
 
+  /* --------------------------- FGTS (v2 — A) --------------------------- */
+  const [fgtsUsado, setFgtsUsado] = useState(0)
+  const [fgtsRendAa, setFgtsRendAa] = useState(FGTS_RENDIMENTO_AA_DEFAULT)
+
+  /* ------------------- custos do dono (v2 — B) ------------------- */
+  /** padrão user-override: default acompanha o valor do imóvel até o usuário editar */
+  const [condominioUser, setCondominioUser] = useState<number | null>(null)
+  const [extraordPct, setExtraordPct] = useState(EXTRAORDINARIAS_PCT_DEFAULT)
+  const [seguroResAno, setSeguroResAno] = useState(SEGURO_RESIDENCIAL_ANO_DEFAULT)
+  const [mudancaCompra, setMudancaCompra] = useState(MUDANCA_DEFAULT)
+
+  /* ----------------- custos do inquilino (v2 — C) ----------------- */
+  const [garantia, setGarantia] = useState<Garantia>('fianca')
+  const [segFiancaPct, setSegFiancaPct] = useState(SEGURO_FIANCA_PCT_DEFAULT)
+  const [incendioPct, setIncendioPct] = useState(INCENDIO_PCT_DEFAULT)
+  const [mudancaCadaAnos, setMudancaCadaAnos] = useState(MUDANCA_CADA_ANOS_DEFAULT)
+  const [mudancaAluguel, setMudancaAluguel] = useState(MUDANCA_DEFAULT)
+
   /* ------------------------ premissas avançadas ------------------------ */
   const [itbiPct, setItbiPct] = useState(REGRAS_IMOBILIARIO.itbiPct * 100)
   const [registroPct, setRegistroPct] = useState(REGRAS_IMOBILIARIO.registroPct * 100)
@@ -86,9 +142,13 @@ export default function Morar() {
   const reajuste = reajusteUser ?? rates.ipca12m
   const trAnualizadaPct = (Math.pow(1 + rates.trMes / 100, 12) - 1) * 100
   const trAa = trUser ?? trAnualizadaPct
+  const poupancaMesPct = rates.poupancaMes
   const aluguel0 =
     aluguelUser ??
     Math.min(30_000, Math.max(500, Math.round((valorImovel * YIELD_ALUGUEL_MES) / 50) * 50))
+  const condominioRef =
+    condominioUser ??
+    Math.max(CONDOMINIO_PISO_MES, Math.round((valorImovel * CONDOMINIO_FRAC_MES) / 10) * 10)
 
   /* ----------------------------- simulação ----------------------------- */
   const sim = useMemo(() => {
@@ -124,15 +184,50 @@ export default function Morar() {
       : []
     const p1 = parcelas[0]?.parcela ?? 0
 
-    // t0: entrada (ou preço cheio) + custos de transação da compra
+    // FGTS (forgone value): só até o teto de imóvel e no máximo a entrada.
+    const fgtsPedido = Math.max(0, fgtsUsado)
+    const fgtsPermitido = val <= REGRAS_IMOBILIARIO.tetoSfh
+    const fgtsS = fgtsPermitido ? Math.min(fgtsPedido, entrada) : 0
+    const fgtsIgnorado = fgtsPedido > 0 && !fgtsPermitido
+    const fgtsClampado = fgtsPermitido && fgtsPedido > entrada + 1e-6
+    const gfAa = Math.max(0, fgtsRendAa)
+    const gfM = aToM(gfAa)
+    /** fator mensal do custo de usar o FGTS: cresce a g_f, é descontado a d */
+    const razaoFgts = (1 + gfM) / (1 + d)
+
+    // Custos do dono (crescem com o reajuste, como o aluguel)
+    const extraordFrac = Math.min(25, Math.max(0, extraordPct)) / 100
+    const extraordMes0 = Math.max(0, condominioRef) * extraordFrac
+    const seguroResMes0 = Math.max(0, seguroResAno) / 12
+
+    // Custos do inquilino
+    const incendioFrac = Math.min(3, Math.max(0, incendioPct)) / 100
+    const fiancaFrac = garantia === 'fianca' ? Math.min(20, Math.max(0, segFiancaPct)) / 100 : 0
+    const poupM = Math.max(0, poupancaMesPct) / 100
+    const razaoPoup = (1 + poupM) / (1 + d)
+    const caucao0 = garantia === 'caucao' ? CAUCAO_ALUGUEIS * alu0 : 0
+    // mudança a cada X anos (X = 0 → nunca muda); step 0,5 ano → ciclo em meses exato
+    const cicloMeses = Math.round(Math.min(10, Math.max(0, mudancaCadaAnos)) * 12)
+    const custoMudancaRent = Math.max(0, mudancaAluguel)
+
+    // t0: entrada (ou preço cheio) + custos de transação + mudança da compra
     const custosT0 =
       (val * (Math.max(0, itbiPct) + Math.max(0, registroPct))) / 100 +
-      (financiado ? Math.max(0, taxaAvaliacao) : 0)
+      (financiado ? Math.max(0, taxaAvaliacao) : 0) +
+      Math.max(0, mudancaCompra)
 
-    let pvSaidasBuy = entrada + custosT0
+    // A parte da entrada paga com FGTS não sai do bolso "caro": o custo dela é
+    // o forgone value, somado adiante como fgtsS × razaoFgts^m.
+    let pvSaidasBuy = entrada - fgtsS + custosT0
     let pvParcelas = 0
     let pvManut = 0
-    let pvRent = 0
+    let pvExtraord = 0
+    let pvSegRes = 0
+    let pvAluguel = 0
+    let pvIncendio = 0
+    let pvFianca = 0
+    let pvMudancaFixa = 0
+    let pvPintura = 0
 
     const chartFull: Array<{ mes: number; comprar: number; alugar: number }> = [
       { mes: 0, comprar: 0, alugar: 0 },
@@ -149,20 +244,41 @@ export default function Morar() {
     for (let m = 1; m <= N; m++) {
       const df = Math.pow(1 + d, -m)
       const v = valorEm(m)
+      // reajuste aplicado a cada 12 meses completos de contrato
+      const fReaj = Math.pow(1 + reaj / 100, Math.floor((m - 1) / 12))
       const manutM = (manutFrac * v) / 12
+      const extraordM = extraordMes0 * fReaj
+      const segResM = seguroResMes0 * fReaj
       const parcela = temFin && m <= nFin ? parcelas[m - 1].parcela : 0
       const saldo = temFin && m <= nFin ? parcelas[m - 1].saldo : 0
-      // reajuste aplicado a cada 12 meses completos de contrato
-      const aluguelM = alu0 * Math.pow(1 + reaj / 100, Math.floor((m - 1) / 12))
+      const aluguelM = alu0 * fReaj
 
       pvParcelas += parcela * df
       pvManut += manutM * df
-      pvSaidasBuy += (parcela + manutM) * df
-      pvRent += aluguelM * df
+      pvExtraord += extraordM * df
+      pvSegRes += segResM * df
+      pvSaidasBuy += (parcela + manutM + extraordM + segResM) * df
+
+      pvAluguel += aluguelM * df
+      pvIncendio += aluguelM * incendioFrac * df
+      pvFianca += aluguelM * fiancaFrac * df
+      // ciclo de mudança do inquilino (meses ciclo, 2×ciclo, …; nunca no mês 0)
+      if (cicloMeses > 0 && m % cicloMeses === 0) {
+        pvMudancaFixa += custoMudancaRent * df
+        pvPintura += aluguelM * PINTURA_ALUGUEIS * df
+      }
+
+      // custo em VP de ter usado o FGTS, avaliado no mês m: o saldo teria
+      // virado fgtsS×(1+gf)^m — descontado a d, fgtsS×razaoFgts^m
+      const fgtsCustoM = fgtsS * Math.pow(razaoFgts, m)
+      // caução: 3 aluguéis presos rendendo poupança, devolvidos se sair em m
+      const caucaoCustoM = caucao0 * (1 - Math.pow(razaoPoup, m))
 
       // custo líquido em VP se vender o imóvel (pagando corretagem e quitando o saldo) no mês m
-      const comprarSeVender = pvSaidasBuy - (v * (1 - corret) - saldo) * df
-      chartFull.push({ mes: m, comprar: comprarSeVender, alugar: pvRent })
+      const comprarSeVender = pvSaidasBuy - (v * (1 - corret) - saldo) * df + fgtsCustoM
+      const alugarAteM =
+        pvAluguel + pvIncendio + pvFianca + pvMudancaFixa + pvPintura + caucaoCustoM
+      chartFull.push({ mes: m, comprar: comprarSeVender, alugar: alugarAteM })
 
       if (m % 12 === 0) {
         tabela.push({
@@ -171,7 +287,7 @@ export default function Morar() {
           aluguelMes: alu0 * Math.pow(1 + reaj / 100, m / 12 - 1),
           saldo,
           vpBuy: comprarSeVender,
-          vpRent: pvRent,
+          vpRent: alugarAteM,
         })
       }
     }
@@ -180,18 +296,26 @@ export default function Morar() {
     const vFim = valorEm(N)
     const saldoN = temFin && N <= nFin ? parcelas[N - 1].saldo : 0
     const custoBuy = chartFull[N].comprar
-    const custoRent = pvRent
+    const custoRent = chartFull[N].alugar
 
     // Decomposição em VP com identidade exata:
     //   capVP    = preço − venda futura em VP (capital imobilizado, já abatida a valorização)
     //   jurosVP  = entrada + PV(parcelas) + saldo final em VP − preço (custo extra de financiar)
-    //   transVP  = ITBI + registro + avaliação (t0) + corretagem da venda em VP
-    //   pvManut  = manutenção do proprietário em VP
-    //   capVP + jurosVP + transVP + pvManut === custoBuy  (à vista, jurosVP = 0 exato)
+    //   transVP  = ITBI + registro + avaliação + mudança (t0) + corretagem da venda em VP
+    //   manEncVP = manutenção + extraordinárias + seguro residencial do dono, em VP
+    //   fgtsCredito = fgtsS − fgtsS×razaoFgts^N (≥ 0 quando g_f < d): crédito, não vira fatia
+    //   capVP + jurosVP + transVP + manEncVP − fgtsCredito === custoBuy
+    // Lado alugar:
+    //   pvAluguel + garantiaVP + pvIncendio + pvMudancaFixa + pvPintura === custoRent
     const capVP = val - vFim * dfN
     const jurosVP = financiado ? entrada + pvParcelas + saldoN * dfN - val : 0
     const corretagemVP = vFim * corret * dfN
     const transVP = custosT0 + corretagemVP
+    const manEncVP = pvManut + pvExtraord + pvSegRes
+    const fgtsCredito = fgtsS - fgtsS * Math.pow(razaoFgts, N)
+    const caucaoVP = caucao0 * (1 - Math.pow(razaoPoup, N))
+    const garantiaVP = garantia === 'caucao' ? caucaoVP : garantia === 'fianca' ? pvFianca : 0
+    const extrasRentVP = garantiaVP + pvIncendio + pvMudancaFixa + pvPintura
 
     // Break-even robusto (mesma regra do Carro): primeiro mês a partir do qual
     // comprar fica mais barato ATÉ O FIM — as linhas podem se cruzar mais de uma vez.
@@ -205,8 +329,12 @@ export default function Morar() {
 
     const diff = custoRent - custoBuy // > 0 → comprar é mais barato
     const eqMes = pmtPrice(Math.abs(diff), d, N)
-    // PV(aluguéis) é linear no aluguel inicial → aluguel que empata os dois VPs
-    const aluguelEq = custoRent > 1e-9 ? (alu0 * custoBuy) / custoRent : NaN
+    // Aluguel de equilíbrio (v2): custoRent(A) = k×A + parte fixa. Tudo escala
+    // com o aluguel (aluguéis, garantia, incêndio, pintura), EXCETO o frete das
+    // mudanças (pvMudancaFixa) → resolve-se o empate isolando o termo fixo.
+    const kRent = alu0 > 0 ? (custoRent - pvMudancaFixa) / alu0 : NaN
+    const aluguelEq =
+      Number.isFinite(kRent) && kRent > 1e-9 ? (custoBuy - pvMudancaFixa) / kRent : NaN
 
     // amostragem para o gráfico (a conta acima é sempre mensal)
     const step = Math.max(1, Math.ceil(N / 180))
@@ -236,6 +364,24 @@ export default function Morar() {
       transVP,
       corretagemVP,
       pvManut,
+      pvExtraord,
+      pvSegRes,
+      manEncVP,
+      pvAluguel,
+      pvIncendio,
+      pvFianca,
+      pvMudancaFixa,
+      pvPintura,
+      garantiaVP,
+      caucaoVP,
+      caucao0,
+      extrasRentVP,
+      cicloMeses,
+      fgtsS,
+      fgtsCredito,
+      fgtsIgnorado,
+      fgtsClampado,
+      gfAa,
       breakEven,
       comprarJaFoiMaisBarato,
       diff,
@@ -263,6 +409,18 @@ export default function Morar() {
     itbiPct,
     registroPct,
     taxaAvaliacao,
+    fgtsUsado,
+    fgtsRendAa,
+    condominioRef,
+    extraordPct,
+    seguroResAno,
+    mudancaCompra,
+    garantia,
+    segFiancaPct,
+    incendioPct,
+    mudancaCadaAnos,
+    mudancaAluguel,
+    poupancaMesPct,
   ])
 
   /* --------------------------- avisos (LTV etc.) --------------------------- */
@@ -274,11 +432,30 @@ export default function Morar() {
   const idadeOk = !sim.financiado || idadeFim <= REGRAS_IMOBILIARIO.idadeMaxFimContrato
   const prazoMaxIdade = Math.max(0, Math.floor((REGRAS_IMOBILIARIO.idadeMaxFimContrato - idade) * 12))
   const nomeSistema = sistema === 'sac' ? 'SAC' : 'Price'
+  const temAvisos = !entradaOk || !idadeOk || sim.fgtsIgnorado || sim.fgtsClampado
 
   /* ------------------------------ veredito ------------------------------ */
   const compraLabel = sim.financiado ? 'comprar financiado' : 'comprar à vista'
   const buyWins = sim.diff > 0
   const empate = Math.abs(sim.diff) < Math.max(sim.custoBuy, sim.custoRent, 1) * 0.02
+  const garantiaLabel =
+    garantia === 'fianca' ? 'seguro-fiança' : garantia === 'caucao' ? 'caução' : 'fiador'
+
+  const fgtsFrase =
+    sim.fgtsS > 0
+      ? ` Da entrada, ${brl(sim.fgtsS)} vêm do FGTS — preso no fundo, esse dinheiro renderia ${pct(
+          sim.gfAa,
+          1,
+        )} a.a.: ${
+          sim.fgtsCredito >= 0
+            ? `menos que seu custo de oportunidade líquido, então usá-lo barateia a compra em ${brl(
+                sim.fgtsCredito,
+              )} em VP.`
+            : `neste caso raro, MAIS que seu custo de oportunidade líquido — usá-lo encarece a compra em ${brl(
+                -sim.fgtsCredito,
+              )} em VP.`
+        }`
+      : ''
 
   const verdictWinner = empate
     ? 'Empate técnico — decida pelo que pesa na sua vida'
@@ -287,7 +464,7 @@ export default function Morar() {
       : `Vale mais a pena continuar no aluguel: economia de ${brlCents(sim.eqMes)}/mês`
   const verdictDetail = `Em ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}, ${compraLabel} custa ${brl(
     sim.custoBuy,
-  )} e alugar custa ${brl(sim.custoRent)}, em valor presente — a compra já devolve a venda do imóvel no fim (menos ${pct(
+  )} e alugar custa ${brl(sim.custoRent)} (aluguéis + ${garantiaLabel}, seguro incêndio e mudanças), em valor presente — a compra já devolve a venda do imóvel no fim (menos ${pct(
     sim.corretPct,
     0,
   )} de corretagem${sim.saldoN > 0 ? ' e o saldo devedor' : ''}). Diferença de ${brl(
@@ -295,7 +472,7 @@ export default function Morar() {
   )}, o equivalente a ${brlCents(sim.eqMes)} por mês, descontando o que o dinheiro renderia a ${pct(
     sim.descontoAa,
     1,
-  )} a.a. (custo de oportunidade líquido de 15% de IR). Atenção: a valorização do imóvel (${pct(
+  )} a.a. (custo de oportunidade líquido de 15% de IR).${fgtsFrase} Atenção: a valorização do imóvel (${pct(
     sim.g,
     1,
   )} a.a. na sua premissa) é o parâmetro mais sensível desta conta — ninguém a conhece de antemão; teste cenários antes de decidir.`
@@ -318,13 +495,19 @@ export default function Morar() {
   /**
    * Fatias negativas não funcionam em barra empilhada (mesma solução do Carro):
    * - se a valorização supera o desconto, o "capital imobilizado" vira crédito;
-   * - se a taxa do financiamento fica abaixo do desconto, os juros viram crédito.
-   * Nesses casos a fatia sai do gráfico e vira nota — e o subtítulo deixa de
-   * prometer que as fatias somam o total.
+   * - se a taxa do financiamento fica abaixo do desconto, os juros viram crédito;
+   * - o FGTS gera um crédito próprio (fgtsCredito): usar dinheiro preso rendendo
+   *   pouco custa menos que usar dinheiro livre — não vira fatia, vira nota;
+   * - no aluguel, se a poupança render mais que o desconto, a caução vira crédito.
    */
   const capCredito = sim.capVP < 0 ? -sim.capVP : 0
   const jurosCredito = sim.financiado && sim.jurosVP < 0 ? -sim.jurosVP : 0
-  const temCredito = capCredito > 0 || jurosCredito > 0
+  const fgtsCred = Math.max(0, sim.fgtsCredito)
+  const fgtsDebito = Math.max(0, -sim.fgtsCredito)
+  const rentCredito = sim.extrasRentVP < 0 ? -sim.extrasRentVP : 0
+  const rentExtrasSlice = Math.max(0, sim.extrasRentVP)
+  const temCredito =
+    capCredito > 0 || jurosCredito > 0 || fgtsCred > 0.005 || fgtsDebito > 0.005 || rentCredito > 0.005
   const compSeries: SeriesDef[] = [
     ...(sim.capVP > 0
       ? [{ key: 'cap', name: 'Capital imobilizado − valorização', colorIndex: 0 } satisfies SeriesDef]
@@ -332,9 +515,12 @@ export default function Morar() {
     ...(sim.financiado && sim.jurosVP > 0
       ? [{ key: 'jur', name: 'Juros + seguros do financiamento', colorIndex: 5 } satisfies SeriesDef]
       : []),
-    { key: 'trans', name: 'Transação (ITBI, cartório, corretagem)', colorIndex: 2 },
-    { key: 'man', name: 'Manutenção do proprietário', colorIndex: 3 },
+    { key: 'trans', name: 'Transação (ITBI, cartório, corretagem, mudança)', colorIndex: 2 },
+    { key: 'man', name: 'Manutenção e encargos do dono', colorIndex: 3 },
     { key: 'alu', name: 'Aluguel', colorIndex: 1 },
+    ...(rentExtrasSlice > 0
+      ? [{ key: 'extra', name: 'Garantia, seguros e mudanças', colorIndex: 4 } satisfies SeriesDef]
+      : []),
   ]
   const compData = [
     {
@@ -342,11 +528,26 @@ export default function Morar() {
       cap: Math.max(0, sim.capVP),
       jur: Math.max(0, sim.jurosVP),
       trans: sim.transVP,
-      man: sim.pvManut,
+      man: sim.manEncVP,
       alu: 0,
+      extra: 0,
     },
-    { opcao: 'Alugar', cap: 0, jur: 0, trans: 0, man: 0, alu: sim.custoRent },
+    { opcao: 'Alugar', cap: 0, jur: 0, trans: 0, man: 0, alu: sim.pvAluguel, extra: rentExtrasSlice },
   ]
+
+  const garantiaNota =
+    garantia === 'fianca'
+      ? `o seguro-fiança de ${pct(segFiancaPct, 0)} do aluguel (${brl(sim.garantiaVP)} em VP — pago todo mês, não devolvido)`
+      : garantia === 'caucao'
+        ? `o custo de oportunidade da caução (${brl(sim.caucao0)} parados rendendo poupança em vez de ${pct(
+            sim.descontoAa,
+            1,
+          )} a.a. — ${
+            sim.garantiaVP >= 0
+              ? `${brl(sim.garantiaVP)} em VP`
+              : `crédito de ${brl(-sim.garantiaVP)} em VP, pois a poupança rende mais que o desconto`
+          })`
+        : 'a garantia por fiador (custo zero)'
 
   const tabelaColunas: ReactNode[] = [
     'Ano',
@@ -370,7 +571,7 @@ export default function Morar() {
     <ToolPage
       icon={<KeyRound size={20} />}
       title="Morar: alugar × comprar"
-      description="Continuar no aluguel ou comprar o imóvel? Comparação em valor presente, com valorização, ITBI, corretagem, manutenção e custo de oportunidade."
+      description="Continuar no aluguel ou comprar o imóvel? Comparação em valor presente, com valorização, FGTS, ITBI, corretagem e os custos que só o dono — ou só o inquilino — paga."
       inputs={
         <>
           <Card title="O imóvel">
@@ -393,7 +594,7 @@ export default function Morar() {
                 max={30_000}
                 step={50}
                 format={v => `${brl(v)}/mês`}
-                hint="Default: 0,45% do valor do imóvel por mês — rental yield de ~5,4% a.a., referência do índice FipeZap de locação. Condomínio e IPTU ficam FORA da conta: no Brasil o inquilino normalmente paga os dois, então esse custo é igual nos dois lados."
+                hint="Default: 0,45% do valor do imóvel por mês — rental yield de ~5,4% a.a., referência do índice FipeZap de locação. Condomínio ordinário e IPTU ficam FORA da conta: no Brasil o inquilino normalmente paga os dois, então esse custo é igual nos dois lados."
               />
               <SliderField
                 label="Horizonte"
@@ -423,7 +624,7 @@ export default function Morar() {
                 max={15}
                 step={0.5}
                 format={v => `${pct(v, 1)} a.a.`}
-                hint="Reajuste do contrato de locação, aplicado a cada 12 meses completos. Default: IPCA acumulado 12 meses (BCB ao vivo) — muitos contratos usam IGP-M ou IPCA."
+                hint="Reajuste do contrato de locação, aplicado a cada 12 meses completos. Default: IPCA acumulado 12 meses (BCB ao vivo) — muitos contratos usam IGP-M ou IPCA. Os encargos do dono (extraordinárias, seguro residencial) também crescem por este índice."
               />
             </div>
           </Card>
@@ -501,6 +702,28 @@ export default function Morar() {
                 </>
               )}
               <SliderField
+                label="FGTS usado na compra"
+                value={fgtsUsado}
+                onChange={setFgtsUsado}
+                min={0}
+                max={300_000}
+                step={5_000}
+                format={brl}
+                hint="Saldo do FGTS abatido da entrada. Requisitos (fgts.gov.br): 3 anos de trabalho sob FGTS, não ter imóvel residencial no município e não ter financiamento SFH ativo; imóvel de até R$ 2,25 mi (Conselho Curador, 26/11/2025). O FGTS também pode amortizar o saldo a cada 2 anos — não modelado aqui."
+              />
+              {fgtsUsado > 0 && (
+                <SliderField
+                  label="Rendimento do FGTS"
+                  value={fgtsRendAa}
+                  onChange={setFgtsRendAa}
+                  min={3}
+                  max={10}
+                  step={0.1}
+                  format={v => `${pct(v, 1)} a.a.`}
+                  hint="TR + 3% a.a. + distribuição de resultados do fundo: rendimento efetivo total de 7,09% (2022), 7,78% (2023), 6,05% (2024) e 6,90% (2025) — média de ~7,0% a.a.; desde o STF (ADI 5090, jun/2024) há piso de IPCA. Fonte: fgts.gov.br. Como esse dinheiro rende pouco preso no fundo, usá-lo na compra custa menos que usar dinheiro que renderia CDI."
+                />
+              )}
+              <SliderField
                 label="Custo de oportunidade"
                 value={custoOp}
                 onChange={setCustoOpUser}
@@ -513,6 +736,131 @@ export default function Morar() {
               <LiveBadge live={rates.aoVivo} referencia={rates.referencia} />
             </div>
           </Card>
+
+          <Collapse title="Custos do dono × do inquilino">
+            <div className="space-y-4">
+              <SectionTitle>Se comprar (dono)</SectionTitle>
+              <SliderField
+                label="Condomínio (referência)"
+                value={condominioRef}
+                onChange={setCondominioUser}
+                min={0}
+                max={6_000}
+                step={10}
+                format={v => `${brl(v)}/mês`}
+                hint="Default: ~0,07% do valor do imóvel/mês, piso de R$ 450 (média nacional de R$ 527/mês — pesquisa Cerus, 2026); acompanha o valor do imóvel até você editar. O condomínio ORDINÁRIO fica FORA da conta — o inquilino paga (art. 23, §1º, Lei 8.245/91), então é igual dos dois lados. Ele só serve de base para a cota extraordinária abaixo."
+              />
+              <SliderField
+                label="Extraordinárias + fundo de reserva"
+                value={extraordPct}
+                onChange={setExtraordPct}
+                min={0}
+                max={25}
+                step={1}
+                format={v => `${pct(v, 0)} do cond.`}
+                hint="Despesas extraordinárias de condomínio são do PROPRIETÁRIO por lei (Lei 8.245/91, art. 22, parágrafo único: obras estruturais, pintura de fachada, fundo de reserva…). Típico: ~10% do boleto. Cresce com o reajuste anual, como o aluguel."
+              />
+              <SliderField
+                label="Seguro residencial (dono)"
+                value={seguroResAno}
+                onChange={setSeguroResAno}
+                min={0}
+                max={3_000}
+                step={50}
+                format={v => `${brl(v)}/ano`}
+                hint="Seguro da estrutura do imóvel, típico do proprietário: faixa de mercado de R$ 300–800/ano (cotações 2026). Cresce com o reajuste anual."
+              />
+              <NumberField
+                label="Mudança + adaptação na compra"
+                value={mudancaCompra}
+                onChange={setMudancaCompra}
+                suffix="R$"
+                min={0}
+                step={100}
+                hint="Custo único, na assinatura: frete da mudança e pequenas adaptações — ~R$ 2.000 para mudança local em capital (guias 2026). Entra nos custos de t0, fora do ITBI/registro."
+              />
+
+              <SectionTitle>Se alugar (inquilino)</SectionTitle>
+              <Segmented<Garantia>
+                label="Garantia do contrato"
+                value={garantia}
+                onChange={setGarantia}
+                options={[
+                  { value: 'fiador', label: 'Fiador' },
+                  { value: 'fianca', label: 'Seguro-fiança' },
+                  { value: 'caucao', label: 'Caução' },
+                ]}
+                hint="Seguro-fiança é a modalidade líder nas capitais: 31,4% dos contratos novos (CRECI-SP, jan/2026). Fiador: custo zero. Caução: 3 aluguéis (máximo legal — art. 38, §2º, Lei 8.245/91) imobilizados hoje e devolvidos no fim corrigidos pela poupança."
+              />
+              {garantia === 'fianca' && (
+                <SliderField
+                  label="Seguro-fiança"
+                  value={segFiancaPct}
+                  onChange={setSegFiancaPct}
+                  min={5}
+                  max={20}
+                  step={1}
+                  format={v => `${pct(v, 0)} do aluguel`}
+                  hint="Prêmio mensal do seguro-fiança: mercado cobra 8–15% do aluguel anual (≈ 1,0–1,8 aluguel por ano), não devolvido. Default: 12% do aluguel vigente, todo mês."
+                />
+              )}
+              {garantia === 'caucao' && (
+                <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] leading-relaxed text-mute">
+                  Caução de <strong className="tnum text-ink">{brl(sim.caucao0)}</strong> (3 aluguéis)
+                  parada rendendo poupança ({pct(poupancaMesPct, 2)} a.m.) em vez do seu custo de
+                  oportunidade —{' '}
+                  {sim.caucaoVP >= 0 ? (
+                    <>
+                      custa <strong className="tnum text-ink">{brl(sim.caucaoVP)}</strong> em VP no
+                      horizonte.
+                    </>
+                  ) : (
+                    <>
+                      como a poupança rende mais que seu desconto, vira um crédito de{' '}
+                      <strong className="tnum text-ink">{brl(-sim.caucaoVP)}</strong> em VP.
+                    </>
+                  )}
+                </p>
+              )}
+              <SliderField
+                label="Seguro incêndio (inquilino)"
+                value={incendioPct}
+                onChange={setIncendioPct}
+                min={0}
+                max={3}
+                step={0.1}
+                format={v => `${pct(v, 1)} do aluguel`}
+                hint="R$ 15–50/mês na prática (~0,8% do aluguel). Por lei o seguro contra fogo é do locador (art. 22, VIII, Lei 8.245/91), mas os contratos costumam transferi-lo ao inquilino — se o seu não transfere, use 0."
+              />
+              <SliderField
+                label="Mudança a cada"
+                value={mudancaCadaAnos}
+                onChange={setMudancaCadaAnos}
+                min={0}
+                max={10}
+                step={0.5}
+                format={v => (v === 0 ? 'nunca mudo' : v === 1 ? '1 ano' : `${num(v, 1)} anos`)}
+                hint="Contrato-padrão de locação dura 30 meses (~3 anos). A cada ciclo, o inquilino paga frete + pintura de devolução de 1 aluguel vigente (dever de restituir como recebeu — art. 23, III; guias 2026: 1–1,5 aluguel). Use 0 se você ficaria no mesmo imóvel o horizonte todo."
+              />
+              {mudancaCadaAnos > 0 && (
+                <SliderField
+                  label="Custo de cada mudança"
+                  value={mudancaAluguel}
+                  onChange={setMudancaAluguel}
+                  min={0}
+                  max={10_000}
+                  step={100}
+                  format={brl}
+                  hint="Frete e caixas de uma mudança local em capital: ~R$ 2.000 (guias 2026). A pintura de devolução (1 aluguel vigente) é somada por fora, a cada ciclo."
+                />
+              )}
+              <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] leading-relaxed text-mute">
+                Taxa de cadastro e corretagem de locação: <strong className="text-ink">R$ 0</strong> —
+                são do proprietário por lei (art. 22, VII, Lei 8.245/91); cobrar do inquilino é
+                contravenção (art. 43).
+              </p>
+            </div>
+          </Collapse>
 
           <Collapse title="Premissas avançadas">
             <div className="space-y-4">
@@ -592,7 +940,7 @@ export default function Morar() {
             badge={verdictBadge}
           />
 
-          {(!entradaOk || !idadeOk) && (
+          {temAvisos && (
             <div className="space-y-2">
               {!entradaOk && (
                 <Aviso tone="negative">
@@ -611,6 +959,22 @@ export default function Morar() {
                   anos: <strong className="text-ink">{meses(prazoMaxIdade)}</strong>.
                 </Aviso>
               )}
+              {sim.fgtsIgnorado && (
+                <Aviso tone="warning">
+                  FGTS ignorado na conta: imóveis acima de{' '}
+                  <strong className="text-ink">{brl(REGRAS_IMOBILIARIO.tetoSfh)}</strong> não aceitam FGTS
+                  na compra (Conselho Curador do FGTS, 26/11/2025). Reduza o valor do imóvel ou zere o
+                  campo.
+                </Aviso>
+              )}
+              {sim.fgtsClampado && (
+                <Aviso tone="warning">
+                  Você pediu {brl(fgtsUsado)} de FGTS, mas só{' '}
+                  <strong className="text-ink">{brl(sim.fgtsS)}</strong> cabem{' '}
+                  {sim.financiado ? 'na entrada' : 'no preço do imóvel'} — a conta usa esse valor. (Usar o excedente para amortizar o saldo a cada 2 anos é permitido, mas não
+                  é modelado aqui.)
+                </Aviso>
+              )}
             </div>
           )}
 
@@ -619,14 +983,14 @@ export default function Morar() {
               label={sim.financiado ? 'Comprar financiado — VP' : 'Comprar à vista — VP'}
               value={sim.custoBuy}
               format={brl}
-              sub={`custo em ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}, já com a venda no fim`}
+              sub={`custo em ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}, já com a venda no fim${sim.fgtsS > 0 ? ` e ${brl(sim.fgtsS)} de FGTS` : ''}`}
               tone={!empate && buyWins ? 'positive' : 'neutral'}
             />
             <StatTile
               label="Alugar — VP"
               value={sim.custoRent}
               format={brl}
-              sub={`começa em ${brl(sim.alu0)}/mês, reajuste de ${pct(sim.reaj, 1)} a.a.`}
+              sub={`aluguel desde ${brl(sim.alu0)}/mês + ${garantiaLabel}, seguro incêndio e mudanças`}
               tone={!empate && !buyWins ? 'positive' : 'neutral'}
             />
             <StatTile
@@ -650,7 +1014,7 @@ export default function Morar() {
 
           <Card
             title="Custo acumulado em valor presente"
-            subtitle={`A linha de comprar desconta, mês a mês, quanto você recuperaria vendendo o imóvel naquele momento (menos ${pct(sim.corretPct, 0)} de corretagem${sim.financiado ? ' e o saldo devedor' : ''})`}
+            subtitle={`A linha de comprar desconta, mês a mês, quanto você recuperaria vendendo o imóvel naquele momento (menos ${pct(sim.corretPct, 0)} de corretagem${sim.financiado ? ' e o saldo devedor' : ''}); a de alugar acumula aluguel, ${garantiaLabel}, seguro incêndio e mudanças`}
           >
             <VLineChart
               data={sim.chartData}
@@ -667,6 +1031,8 @@ export default function Morar() {
                 : sim.breakEven <= 1
                   ? 'Comprar já é mais barato desde o primeiro mês — resultado raro: confira se a valorização que você assumiu é realista.'
                   : `O cruzamento das linhas é o break-even: a partir de ${meses(sim.breakEven)}, comprar fica mais barato que alugar até o fim do horizonte.`}{' '}
+              {sim.fgtsS > 0 &&
+                `A linha de comprar já cobra o custo real do FGTS: o valor que ${brl(sim.fgtsS)} teriam virado rendendo ${pct(sim.gfAa, 1)} a.a. no fundo. `}
               Lembre: o desenho todo muda com a premissa de valorização.
             </p>
           </Card>
@@ -694,7 +1060,37 @@ export default function Morar() {
               {sim.financiado &&
                 sim.jurosVP > 0 &&
                 ' "Juros + seguros" é quanto financiar custa a mais do que pagar à vista, em VP (juros, MIP e DFI, já líquidos do benefício de adiar pagamentos).'}{' '}
-              No aluguel o custo é um só: o próprio aluguel, reajustado ano a ano.
+              "Manutenção e encargos do dono" junta manutenção ({brl(sim.pvManut)}), cota extraordinária
+              do condomínio ({brl(sim.pvExtraord)}) e seguro residencial ({brl(sim.pvSegRes)}) — contas
+              que a Lei 8.245/91 (arts. 22 e 23) deixa com o proprietário. No aluguel, além das
+              mensalidades{rentExtrasSlice > 0 ? (
+                <>
+                  , "Garantia, seguros e mudanças" reúne {garantiaNota}, o seguro incêndio (
+                  {brl(sim.pvIncendio)}) e{' '}
+                  {sim.cicloMeses > 0
+                    ? `as mudanças a cada ${fmtTempo(sim.cicloMeses)} (frete + pintura de devolução de 1 aluguel — ${brl(sim.pvMudancaFixa + sim.pvPintura)} em VP)`
+                    : 'nenhuma mudança (você assume ficar no mesmo imóvel)'}
+                  .
+                </>
+              ) : (
+                ', não há custos extras relevantes na sua premissa.'
+              )}
+              {sim.fgtsS > 0 &&
+                fgtsCred > 0.005 &&
+                ` Usar ${brl(sim.fgtsS)} do FGTS gera um crédito de ${brl(
+                  fgtsCred,
+                )} que não vira fatia: preso no fundo, esse dinheiro renderia só ${pct(
+                  sim.gfAa,
+                  1,
+                )} a.a. — bem menos que os ${pct(
+                  sim.descontoAa,
+                  1,
+                )} a.a. do seu dinheiro livre. Pagar a entrada com o recurso "barato" custa menos, em valor presente; quanto maior o horizonte, maior o desconto.`}
+              {sim.fgtsS > 0 &&
+                fgtsDebito > 0.005 &&
+                ` Na sua premissa o FGTS rende MAIS que seu custo de oportunidade líquido — usá-lo encarece a compra em ${brl(
+                  fgtsDebito,
+                )} em VP (também fora do gráfico).`}
               {capCredito > 0 &&
                 ` Na sua premissa, a valorização de ${pct(sim.g, 1)} a.a. supera o desconto de ${pct(
                   sim.descontoAa,
@@ -706,6 +1102,10 @@ export default function Morar() {
                 ` A taxa do financiamento está abaixo do custo de oportunidade: em VP, financiar gera um crédito de ${brl(
                   jurosCredito,
                 )}, que também não vira fatia.`}
+              {rentCredito > 0 &&
+                ` No aluguel, a caução rende mais que seu custo de oportunidade líquido — já descontados o seguro incêndio e as mudanças, o conjunto vira um crédito líquido de ${brl(
+                  rentCredito,
+                )}, fora do gráfico.`}
             </p>
           </Card>
 
@@ -730,8 +1130,9 @@ export default function Morar() {
               ])}
             />
             <p className="mt-2 text-[11px] text-mute">
-              "Aluguel vigente" é a mensalidade paga naquele ano, após os reajustes. Verde = opção mais
-              barata até ali.
+              "Aluguel vigente" é a mensalidade paga naquele ano, após os reajustes. O VP acumulado de
+              alugar inclui garantia, seguro incêndio e mudanças; o de comprar inclui o custo do FGTS
+              usado. Verde = opção mais barata até ali.
             </p>
           </Card>
 
@@ -753,15 +1154,50 @@ export default function Morar() {
                 passaram décadas rendendo menos que a inflação e décadas rendendo muito mais. Premissa
                 conservadora: IPCA.
               </li>
+              {fgtsUsado > 0 && (
+                <li>
+                  FGTS: rendimento de {pct(sim.gfAa, 1)} a.a. (TR + 3% + distribuição de resultados —
+                  efetivo entre 6,05% e 7,78% de 2022 a 2025; piso de IPCA desde o STF, ADI 5090,
+                  jun/2024 — fonte: fgts.gov.br). Uso na compra exige 3 anos de FGTS, não ter imóvel
+                  residencial no município nem financiamento SFH ativo, e imóvel até{' '}
+                  {brl(REGRAS_IMOBILIARIO.tetoSfh)} (Conselho Curador, 26/11/2025). Simplificações
+                  declaradas: sem a compra, o saldo ficaria intocado até o fim do horizonte (sem
+                  saque-aniversário ou rescisão); a amortização extra permitida a cada 2 anos não é
+                  modelada.
+                </li>
+              )}
               <li>
-                Condomínio e IPTU ficam fora dos dois lados: no Brasil o inquilino normalmente paga ambos
-                (praxe consolidada na Lei do Inquilinato), então o custo é igual alugando ou comprando.
+                Condomínio ordinário e IPTU ficam fora dos dois lados: a Lei 8.245/91 até atribui
+                impostos e seguro ao locador "salvo disposição em contrário" (art. 22, VIII), mas a
+                praxe dos contratos transfere ambos ao inquilino — o custo é igual alugando ou
+                comprando.
+              </li>
+              <li>
+                Dono × inquilino (Lei 8.245/91): despesas ordinárias de condomínio são do inquilino
+                (art. 23, §1º); extraordinárias + fundo de reserva são do proprietário (art. 22,
+                parágrafo único) — aqui, {pct(extraordPct, 0)} de um condomínio de referência de{' '}
+                {brl(condominioRef)}/mês (média nacional R$ 527/mês — Cerus, 2026). Seguro residencial
+                do dono: {brl(seguroResAno)}/ano (mercado: R$ 300–800).
+              </li>
+              <li>
+                Garantia do inquilino: {garantiaLabel}. Seguro-fiança lidera nas capitais com 31,4% dos
+                contratos novos (CRECI-SP, jan/2026); caução é limitada a 3 aluguéis (art. 38, §2º) e
+                devolvida corrigida pela poupança ({pct(poupancaMesPct, 2)} a.m., BCB). Taxa de cadastro
+                e corretagem de locação: custo zero para o inquilino por lei (art. 22, VII; cobrar é
+                contravenção — art. 43).
+              </li>
+              <li>
+                {sim.cicloMeses > 0
+                  ? `Mudanças do inquilino a cada ${fmtTempo(sim.cicloMeses)} (contrato-padrão de 30 meses): ${brl(mudancaAluguel)} de frete + pintura de devolução de 1 aluguel vigente por ciclo (art. 23, III; guias 2026: mudança local ~R$ 2 mil, pintura 1–1,5 aluguel).`
+                  : 'Sem mudanças no aluguel (premissa: você ficaria no mesmo imóvel o horizonte todo).'}{' '}
+                Na compra, mudança única de {brl(mudancaCompra)} em t0.
               </li>
               <li>
                 Custos de transação: ITBI de {pct(itbiPct, 1)} + registro/escritura de {pct(registroPct, 1)}{' '}
                 na compra{sim.financiado ? `, tarifa de avaliação de ${brl(taxaAvaliacao)}` : ''} e
                 corretagem de {pct(sim.corretPct, 1)} na venda (praxe de mercado/CRECI) — total de{' '}
-                {brl(sim.custosT0)} na entrada e {brl(sim.corretagemVP)} de corretagem em VP.
+                {brl(sim.custosT0)} na entrada (com a mudança) e {brl(sim.corretagemVP)} de corretagem em
+                VP.
               </li>
               <li>
                 Manutenção do proprietário: {pct(manutPctAno, 1)} do valor atualizado por ano — reformas,
@@ -779,11 +1215,13 @@ export default function Morar() {
                 </li>
               )}
               <li>
-                Aluguel de equilíbrio: como o VP dos aluguéis é proporcional ao aluguel inicial, o ponto de
-                empate é aluguel × (custo de comprar ÷ custo de alugar)
+                Aluguel de equilíbrio: quase todo o custo de alugar é proporcional ao aluguel inicial
+                (aluguéis, garantia, seguro incêndio e pintura); só o frete das mudanças (
+                {brl(sim.pvMudancaFixa)} em VP) é fixo. O empate resolve custo de comprar = k × aluguel +
+                parte fixa
                 {Number.isFinite(sim.aluguelEq) && sim.aluguelEq > 0
-                  ? ` = ${brl(sim.aluguelEq)}/mês`
-                  : ' — na sua premissa, comprar custa menos que zero em VP: não existe aluguel baixo o bastante para empatar'}
+                  ? ` → ${brl(sim.aluguelEq)}/mês`
+                  : ' — na sua premissa, comprar custa menos que a parte fixa de alugar: não existe aluguel baixo o bastante para empatar'}
                 .
               </li>
               <li>Ferramenta educacional de comparação — não é recomendação financeira.</li>
