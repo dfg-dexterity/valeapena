@@ -5,6 +5,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   InfoTip,
   NumberField,
   Segmented,
@@ -382,6 +384,210 @@ export default function PjClt() {
       ? `Faturando ${brl(faturamento)} ${regimeTxt}, sobram ${brl(pj.final)}/mês contra ${brl(cltFinal)} do pacote CLT${pctTxt} — já contando benefícios, 13º, férias, deslocamento e home office.`
       : `O pacote CLT entrega ${brl(cltFinal)}/mês contra ${brl(pj.final)} do PJ faturando ${brl(faturamento)} ${regimeTxt}${pctTxt} — já contando benefícios, 13º, férias, deslocamento e home office.`
 
+  /* ---------- exportação (R3.7) ---------- */
+  const r2 = (v: number) => Math.round(v * 100) / 100
+  const modalidadeTxt = (d: number) =>
+    d === 5 ? 'presencial (5 d/sem)' : d === 3 ? 'híbrido (3 d/sem)' : d === 0 ? 'remoto' : `${num(d)} d/sem`
+  const regimeLabel = ehMei
+    ? 'MEI (DAS fixo)'
+    : pj.desenquadrado
+      ? 'MEI acima do teto → Simples Nacional'
+      : `Simples Nacional (${anexoTxt})`
+  const plModoTxt =
+    regime === 'mei' || pj.desenquadrado
+      ? 'mínimo legal'
+      : plModo === 'minimo'
+        ? 'mínimo legal'
+        : plModo === 'fatorR'
+          ? '28% do faturamento'
+          : 'valor definido'
+  const fatorRTxt = pct(Math.min(pj.fatorR, 9.99) * 100, 0)
+
+  const premissas: [string, string][] = [
+    ['Salário bruto CLT', brl(salario)],
+    ['VR/VA por mês', brl(vrva)],
+    ['Plano de saúde (empresa paga)', brl(planoEmpresa)],
+    ['Outros benefícios', brl(outrosBeneficios)],
+    ['Dependentes (IR)', num(dependentes)],
+    ['Faturamento PJ', `${brl(faturamento)}/mês`],
+    ['Regime da PJ', regimeLabel],
+    ['Pró-labore', ehMei ? 'sem pró-labore (MEI)' : `${brlCents(pj.proLabore)} (${plModoTxt})`],
+    ['Plano de saúde (PJ, do bolso)', brl(planoPj)],
+    ['Férias sem faturar', `${num(feriasDias)} dias/ano`],
+    ['Contador', `${brl(contador)}/mês`],
+    ['Outros custos PJ', `${brl(outrosCustos)}/mês`],
+    ['Modalidade — CLT', modalidadeTxt(diasClt)],
+    ['Modalidade — PJ', modalidadeTxt(diasPj)],
+    ['Trajeto porta a porta', `${num(minutosDia)} min/dia`],
+    ['Custo de transporte', `${brl(custoTransporteDia)}/dia`],
+    ['Custo do home office', `${brl(custoHomeDia)}/dia`],
+  ]
+
+  // os dois waterfalls lado a lado: linha · CLT · PJ ('' = não se aplica)
+  const csvLinhas: (string | number)[][] = [
+    ['Bruto (salário CLT · faturamento PJ médio após férias)', r2(salario), r2(pj.fatEfetivo)],
+    ['INSS (salário · pró-labore)', -r2(calc.normal.inss), -r2(pj.inssPl)],
+    ['IRRF (salário · pró-labore)', -r2(calc.normal.irrf), -r2(pj.irrfPl)],
+    [ehMei ? 'DAS — MEI (guia fixa)' : `DAS — Simples ${anexoTxt} (${pct(pj.aliquota * 100, 2)})`, '', -r2(pj.das)],
+    ['IR sobre dividendos', '', -r2(pj.irDiv)],
+    ['13º + ⅓ de férias (média/mês)', r2(calc.extraMedia), ''],
+    ['Benefícios (VR/VA, saúde, outros)', r2(calc.beneficios), ''],
+    ['Contador', '', -r2(contador)],
+    ['Outros custos PJ', '', -r2(outrosCustos)],
+    ['Plano de saúde (do bolso)', '', -r2(planoPj)],
+    ['Líquido antes de trajeto e home office', r2(calc.cltPreDesloc), r2(pj.liquidoBolso)],
+    ['Deslocamento (tempo + transporte)', -r2(calc.custoDeslocClt), -r2(pj.custoDesloc)],
+    ['Home office (energia, internet…)', -r2(calc.homeClt), -r2(calc.homePj)],
+    ['Total comparável/mês', r2(cltFinal), r2(pj.final)],
+  ]
+
+  const resumo = [
+    'PJ × CLT — vale a pena?',
+    verdictWinner,
+    `CLT: pacote comparável de ${brl(cltFinal)}/mês (bruto ${brl(salario)} − INSS ${brlCents(
+      calc.normal.inss,
+    )} − IRRF ${brlCents(calc.normal.irrf)} + 13º/férias + benefícios − trajeto e home office)`,
+    `PJ: ${brl(pj.final)}/mês líquidos faturando ${brl(faturamento)} ${regimeTxt}${
+      ehMei ? ` (DAS fixo de ${brlCents(pj.das)})` : ` (alíquota efetiva de ${pct(pj.aliquota * 100, 2)})`
+    }`,
+    breakEven === null
+      ? 'Faturamento de equilíbrio: acima de R$ 1 mi/mês'
+      : `Faturamento de equilíbrio: ${brl(breakEven)}/mês`,
+    `FGTS + 13º líquido no ano (só o CLT tem): ${brl(calc.fgtsAnual + calc.dec13.liquido)}`,
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  /* ---------- didática (R3.3) ---------- */
+  const deslocTempoClt = calc.custoDeslocClt - calc.dClt.dinheiroMes
+  const passoRegime =
+    ehMei
+      ? {
+          t: `MEI: guia fixa de ${brlCents(pj.das)}, dê o que der o faturamento`,
+          d: (
+            <>
+              No MEI você não paga imposto por porcentagem: é uma guia única de {forte(brlCents(pj.das))} por
+              mês, valendo para qualquer faturamento até {brl(MEI_LIMITE_ANUAL_2026)}/ano. Sobre a sua receita
+              média de {brlCents(pj.fatEfetivo)}, isso equivale a uma alíquota de só{' '}
+              {forte(pct((pj.das / pj.fatEfetivo) * 100, 2))} — por isso, dentro do teto, o MEI quase sempre
+              ganha do Simples.
+            </>
+          ),
+        }
+      : pj.desenquadrado
+        ? {
+            t: 'Você estourou o teto do MEI — a conta virou Simples',
+            d: (
+              <>
+                Faturando {brl(faturamento)}/mês você passa do teto de {brl(MEI_LIMITE_ANUAL_2026)}/ano do MEI
+                e é desenquadrado. O cálculo já usa o Simples Nacional com pró-labore mínimo de{' '}
+                {brlCents(pj.proLabore)}: Fator R de {fatorRTxt}, {anexoTxt}, alíquota efetiva de{' '}
+                {forte(pct(pj.aliquota * 100, 2))} — {brlCents(pj.das)} de DAS por mês.
+              </>
+            ),
+          }
+        : pj.anexoIII
+          ? {
+              t: `Fator R: por que seu imposto é de ${pct(pj.aliquota * 100, 2)}`,
+              d: (
+                <>
+                  O Fator R compara o pró-labore com a receita: {brlCents(pj.proLabore)} × 12 ÷{' '}
+                  {brl(pj.rbt12)} = {forte(pct(pj.fatorR * 100, 0))}. Como deu 28% ou mais, sua empresa
+                  tributa pelo {forte('Anexo III')}, com alíquota efetiva de{' '}
+                  {forte(pct(pj.aliquota * 100, 2))} — {brlCents(pj.das)} de DAS por mês. Com um pró-labore
+                  abaixo de 28% da receita, a mesma empresa cairia no Anexo V, que começa em 15,5%.
+                </>
+              ),
+            }
+          : {
+              t: `Fator R abaixo de 28%: você caiu no Anexo V (${pct(pj.aliquota * 100, 2)})`,
+              d: (
+                <>
+                  Seu pró-labore de {brlCents(pj.proLabore)} é só {forte(fatorRTxt)} da receita de 12 meses (
+                  {brl(pj.rbt12)}) — abaixo de 28%, a empresa tributa pelo {forte('Anexo V')}, com alíquota
+                  efetiva de {forte(pct(pj.aliquota * 100, 2))} ({brlCents(pj.das)}/mês de DAS). Subir o
+                  pró-labore para 28% do faturamento ({brlCents(0.28 * faturamento)}) mudaria para o Anexo
+                  III, que começa em 6% — muitas vezes o INSS extra compensa.
+                </>
+              ),
+            }
+
+  const passosDidatico = [
+    {
+      t: 'O bruto engana — dos dois lados',
+      d: (
+        <>
+          No CLT, dos {brl(salario)} brutos saem {brlCents(calc.normal.inss)} de INSS e{' '}
+          {brlCents(calc.normal.irrf)} de IRRF todo mês. No PJ, a nota de {brl(faturamento)} também encolhe:{' '}
+          {brlCents(pj.das)} de DAS
+          {!ehMei && <>, {brlCents(pj.inssPl + pj.irrfPl)} de INSS/IRRF sobre o pró-labore</>}
+          {pj.irDiv > 0 && <>, {brlCents(pj.irDiv)} de IR sobre dividendos</>}, {brl(contador)} de contador e{' '}
+          {brl(planoPj)} de plano de saúde que ninguém paga por você — além de {num(feriasDias)} dias de
+          férias sem receber. A comparação justa é bolso contra bolso:{' '}
+          {forte(`${brl(cltFinal)} × ${brl(pj.final)}`)} por mês.
+        </>
+      ),
+    },
+    passoRegime,
+    {
+      t: 'O custo invisível do trajeto',
+      d: (
+        <>
+          Indo {num(diasClt)} {diasClt === 1 ? 'dia' : 'dias'} por semana ao escritório, o CLT gasta{' '}
+          {forte(`${brlCents(calc.custoDeslocClt)}/mês`)} com deslocamento: {brlCents(calc.dClt.dinheiroMes)}{' '}
+          de transporte + {num(calc.dClt.horasMes)} horas de trajeto que valem {brlCents(deslocTempoClt)} pelo
+          valor da sua hora. Como PJ ({num(diasPj)} {diasPj === 1 ? 'dia' : 'dias'} por semana), o trajeto
+          custa {brlCents(pj.custoDesloc)}/mês. Esse dinheiro não aparece no contracheque — mas sai do seu
+          bolso e da sua vida do mesmo jeito.
+        </>
+      ),
+    },
+    {
+      t: 'FGTS e 13º são patrimônio que o PJ não tem',
+      d: (
+        <>
+          Fora do mês a mês, o CLT ainda deposita {forte(brl(calc.fgtsAnual))} de FGTS por ano (8% sobre
+          ~13,3 salários) e paga um 13º líquido de {brlCents(calc.dec13.liquido)} — juntos,{' '}
+          {forte(`${brl(calc.fgtsAnual + calc.dec13.liquido)}/ano`)} que se acumulam sozinhos. O 13º já está
+          diluído no líquido mensal acima; o FGTS não entra na conta — é um colchão extra que o PJ só tem se
+          separar o dinheiro todo mês, por conta própria.
+        </>
+      ),
+    },
+  ]
+
+  const analogiaDidatico = (
+    <>
+      Pense em duas caixas de leite de tamanhos diferentes: a do PJ ({brl(faturamento)}) parece bem maior que
+      a do CLT ({brl(salario)}), mas cada uma derrama uma parte no caminho até o copo — impostos, contador,
+      plano de saúde, férias sem receber, trajeto. O que importa é o que chega ao copo:{' '}
+      {forte(brl(cltFinal))} no CLT e {forte(brl(pj.final))} no PJ.
+    </>
+  )
+
+  const sensibilidadeDidatico =
+    breakEven === null ? (
+      <>
+        Com esses custos e deslocamento, nem R$ 1 milhão/mês de faturamento empataria com o pacote CLT — aqui
+        quem decide não é a receita, são os custos fixos do PJ. Revise contador, plano de saúde e dias de
+        férias.
+      </>
+    ) : breakEven === 0 ? (
+      <>
+        O pacote CLT comparável está zerado ou negativo — qualquer faturamento PJ já vence. Mexa no salário ou
+        no deslocamento do lado CLT para ver o jogo virar.
+      </>
+    ) : (
+      <>
+        O número que vira o jogo é o faturamento: a partir de {forte(`${brl(breakEven)}/mês`)} o PJ fica na
+        frente desse pacote CLT para qualquer valor maior.{' '}
+        {faturamento >= breakEven
+          ? `Você informou ${brl(faturamento)} — uma folga de ${brl(faturamento - breakEven)}/mês acima do empate.`
+          : pjVence
+            ? `Com ${brl(faturamento)} o PJ já vence hoje, mas um degrau do Simples ou do IR de dividendos pode derrubar a vantagem antes de ${brl(breakEven)}.`
+            : `Com ${brl(faturamento)}, faltam ${brl(breakEven - faturamento)}/mês para o PJ empatar.`}
+      </>
+    )
+
   /* ---------- waterfalls ---------- */
   const rowsClt: ReactNode[][] = [
     ['Salário bruto', brlCents(salario)],
@@ -723,6 +929,17 @@ export default function PjClt() {
             }
           />
 
+          <ExportBar
+            pagina="pj-clt"
+            resumo={resumo}
+            csv={{
+              nome: 'comparativo',
+              colunas: ['Linha', 'CLT (R$/mês)', 'PJ (R$/mês)'],
+              linhas: csvLinhas,
+            }}
+            premissas={premissas}
+          />
+
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatTile
               label="CLT · líquido/mês"
@@ -863,6 +1080,12 @@ export default function PjClt() {
               receita do mês × alíquota efetiva, com ISS já embutido.
             </p>
           </Card>
+
+          <Didatico
+            passos={passosDidatico}
+            analogia={analogiaDidatico}
+            sensibilidade={sensibilidadeDidatico}
+          />
 
           <Card title="Premissas e simplificações">
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-2">

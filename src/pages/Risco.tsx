@@ -4,6 +4,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   InfoTip,
   LiveBadge,
   NumberField,
@@ -238,22 +240,28 @@ export default function Risco() {
       }
     }
 
-    // distribuição no horizonte, para todas as classes (tabela)
-    const porClasse: Record<string, { p10: number; p50: number; p90: number }> = {}
+    // distribuição no horizonte, para todas as classes (tabela + CSV)
+    const porClasse: Record<
+      string,
+      { p10: number; p50: number; p90: number; probCdi: number }
+    > = {}
     let probCdi = 0
     let probPerda = 0
     for (const c of CLASSES_ATIVO) {
       const sim = sims[c.id]
       if (!sim) continue
       const v = combinar(sim, ultimo)
-      porClasse[c.id] = { p10: pctl(v, 0.1), p50: pctl(v, 0.5), p90: pctl(v, 0.9) }
+      let nCdi = 0
+      for (let i = 0; i < N_CAMINHOS; i++) if (v[i] < cdiFinal) nCdi++
+      porClasse[c.id] = {
+        p10: pctl(v, 0.1),
+        p50: pctl(v, 0.5),
+        p90: pctl(v, 0.9),
+        probCdi: totalInvestido > 0 ? nCdi / N_CAMINHOS : 0,
+      }
       if (c.id === focoId && totalInvestido > 0) {
-        let nCdi = 0
         let nPerda = 0
-        for (let i = 0; i < N_CAMINHOS; i++) {
-          if (v[i] < cdiFinal) nCdi++
-          if (v[i] < totalInvestido) nPerda++
-        }
+        for (let i = 0; i < N_CAMINHOS; i++) if (v[i] < totalInvestido) nPerda++
         probCdi = nCdi / N_CAMINHOS
         probPerda = nPerda / N_CAMINHOS
       }
@@ -264,7 +272,7 @@ export default function Risco() {
 
   /* -------------------- veredito -------------------- */
 
-  const stFoco = resultado.porClasse[foco.id] ?? { p10: 0, p50: 0, p90: 0 }
+  const stFoco = resultado.porClasse[foco.id] ?? { p10: 0, p50: 0, p90: 0, probCdi: 0 }
   const temDinheiro = resultado.totalInvestido > 0
   const vsCdi = resultado.cdiFinal > 0 ? stFoco.p50 / resultado.cdiFinal - 1 : 0
   const tom = !temDinheiro
@@ -276,6 +284,55 @@ export default function Risco() {
         : 'neutral'
 
   const corFoco = cores.series[0]
+
+  /* -------------------- exportação -------------------- */
+
+  const prFoco = premissas[foco.id] ?? { ret: foco.retornoAa, vol: foco.volAa }
+
+  const resumoExport = [
+    'vale a pena? — Risco × retorno',
+    `Classe em foco: ${foco.nome} · horizonte de ${anosTxt}`,
+    `Mediana das 2.000 simulações: ${brl(stFoco.p50)}`,
+    `Cenário ruim (p10): ${brl(stFoco.p10)} · cenário bom (p90): ${brl(stFoco.p90)}`,
+    `Chance de perder do CDI (${pct(cdi, 1)} a.a.): ${pct(resultado.probCdi * 100, 0)} — o CDI daria ${brl(resultado.cdiFinal)}`,
+    `Total investido: ${brl(resultado.totalInvestido)} (${brl(inicial)} hoje + ${mesesTotal}× ${brl(aporte)})`,
+    'Valores nominais e brutos, antes de IR e inflação.',
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  const csvExport = {
+    nome: 'classes',
+    colunas: [
+      'Classe',
+      'Pessimista (p10, R$)',
+      'Mediana (R$)',
+      'Otimista (p90, R$)',
+      'Prob. de perder do CDI (%)',
+    ],
+    linhas: CLASSES_ATIVO.map(cl => {
+      const st = resultado.porClasse[cl.id] ?? { p10: 0, p50: 0, p90: 0, probCdi: 0 }
+      return [
+        cl.nome,
+        Math.round(st.p10),
+        Math.round(st.p50),
+        Math.round(st.p90),
+        Math.round(st.probCdi * 1000) / 10,
+      ]
+    }),
+  }
+
+  const premissasExport: [string, string][] = [
+    ['Valor inicial', brl(inicial)],
+    ['Aporte mensal', brl(aporte)],
+    ['Horizonte', anosTxt],
+    ['Classe em foco', foco.nome],
+    ['CDI de referência', `${pct(cdi, 1)} a.a.`],
+    ['Simulações', '2.000 caminhos (GBM mensal, semente fixa)'],
+    ...CLASSES_ATIVO.map((cl): [string, string] => {
+      const pr = premissas[cl.id] ?? { ret: cl.retornoAa, vol: cl.volAa }
+      return [`${cl.nome} — retorno × vol`, `${pct(pr.ret, 1)} × ${pct(pr.vol, 1)} a.a.`]
+    }),
+  ]
 
   return (
     <ToolPage
@@ -471,6 +528,13 @@ export default function Risco() {
             badge={`2.000 cenários · ${anosTxt}`}
           />
 
+          <ExportBar
+            pagina="risco"
+            resumo={resumoExport}
+            csv={csvExport}
+            premissas={premissasExport}
+          />
+
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             <StatTile
               label="Mediana no horizonte"
@@ -609,6 +673,97 @@ export default function Risco() {
               })}
             />
           </Card>
+
+          {temDinheiro && (
+            <Didatico
+              passos={[
+                {
+                  t: 'Por que 2.000 simulações, e não uma previsão?',
+                  d: (
+                    <>
+                      Ninguém sabe quanto {foco.nome} vai render — qualquer número único seria
+                      chute. Então o computador sorteia 2.000 futuros diferentes, mês a mês, usando
+                      duas premissas: retorno esperado de {pct(prFoco.ret, 1)} ao ano e uma
+                      &ldquo;tremedeira&rdquo; (volatilidade) de {pct(prFoco.vol, 1)}. Olhando os
+                      2.000 juntos, dá para ver o que é comum e o que é raro — coisa que uma
+                      previsão única não mostra.
+                    </>
+                  ),
+                },
+                {
+                  t: `A mediana: ${brl(stFoco.p50)}`,
+                  d: (
+                    <>
+                      Colocamos os 2.000 resultados em fila, do pior para o melhor. O que fica bem
+                      no meio da fila é a mediana: em metade dos futuros você termina com mais que{' '}
+                      {brl(stFoco.p50)}, na outra metade, com menos. É o &ldquo;futuro
+                      típico&rdquo; — não uma promessa.
+                    </>
+                  ),
+                },
+                {
+                  t: 'p10 e p90: as pontas do leque',
+                  d: (
+                    <>
+                      Em 1 de cada 10 futuros simulados você teria <em>menos</em> que{' '}
+                      {brl(stFoco.p10)} — esse é o p10, o cenário ruim. E em 1 de cada 10 teria{' '}
+                      <em>mais</em> que {brl(stFoco.p90)} — o p90, o cenário bom. Os outros 8 caem
+                      entre esses dois valores: é por isso que o gráfico tem cara de leque.
+                    </>
+                  ),
+                },
+                {
+                  t: 'Risco não é "ruim" — é o preço do retorno',
+                  d: (
+                    <>
+                      Deixando os mesmos {brl(resultado.totalInvestido)} no CDI, você chegaria a{' '}
+                      {brl(resultado.cdiFinal)} quase sem sustos.{' '}
+                      {stFoco.p50 > resultado.cdiFinal ? (
+                        <>
+                          A mediana de {foco.nome} é {brl(stFoco.p50)} —{' '}
+                          {brl(Math.round(stFoco.p50) - Math.round(resultado.cdiFinal))} a mais.
+                          Esse extra é o pagamento
+                          por aceitar a incerteza: em {pct(resultado.probCdi * 100, 0)} dos futuros
+                          você ainda termina atrás do CDI.
+                        </>
+                      ) : (
+                        <>
+                          A mediana de {foco.nome} é {brl(stFoco.p50)} — ou seja, o futuro típico
+                          fica {brl(Math.round(resultado.cdiFinal) - Math.round(stFoco.p50))}{' '}
+                          <em>atrás</em> do CDI, e em{' '}
+                          {pct(resultado.probCdi * 100, 0)} das simulações você perde dele. O que
+                          atrai quem mesmo assim investe é o p90 de {brl(stFoco.p90)}: quem aceita
+                          o risco paga com incerteza pelo direito de sonhar com os cenários altos.
+                        </>
+                      )}
+                    </>
+                  ),
+                },
+              ]}
+              analogia={
+                <>
+                  É como a previsão do tempo. Quando dizem &ldquo;70% de chance de chuva&rdquo;, o
+                  meteorologista rodou o filme da atmosfera muitas vezes — e choveu em 70% deles.
+                  Aqui é igual: dizer que {foco.nome} perde do CDI em{' '}
+                  {pct(resultado.probCdi * 100, 0)} das simulações significa que isso aconteceu em{' '}
+                  {num(resultado.probCdi * N_CAMINHOS)} dos 2.000 filmes do seu dinheiro. Não é
+                  certeza — é frequência. E, como na chuva, serve para decidir se você sai de casa
+                  com guarda-chuva.
+                </>
+              }
+              sensibilidade={
+                <>
+                  O horizonte estica ou encolhe o leque. Hoje, em {anosTxt}, ele vai de{' '}
+                  {brl(stFoco.p10)} a {brl(stFoco.p90)} — uma abertura de{' '}
+                  {brl(Math.round(stFoco.p90) - Math.round(stFoco.p10))}. Encurte o horizonte no
+                  controle ao lado e veja o
+                  leque fechar (menos tempo para sorte e azar se acumularem); alongue e veja abrir.
+                  A volatilidade faz o mesmo: dobre a de {foco.nome} em &ldquo;Premissas
+                  avançadas&rdquo; e o leque alarga na hora.
+                </>
+              }
+            />
+          )}
 
           <Card title="Como ler esta simulação" subtitle="Premissas e limitações — leia antes de decidir">
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-2">

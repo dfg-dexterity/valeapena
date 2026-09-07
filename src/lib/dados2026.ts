@@ -104,8 +104,8 @@ export const REGRAS_IMOBILIARIO = {
   itbiPct: 0.03,
   /** registro/escritura típico */
   registroPct: 0.01,
-  /** tarifa de avaliação do banco (Caixa: R$ 2.200–3.000) */
-  taxaAvaliacao: 2500,
+  /** tarifa de avaliação do banco (Caixa 2026: ~R$ 3.100; só no cenário financiado) */
+  taxaAvaliacao: 3100,
 } as const
 
 /* ============================ Investimentos ============================ */
@@ -149,3 +149,39 @@ export const CLASSES_ATIVO: ClasseAtivo[] = [
   { id: 'acoes', nome: 'Ações (Ibovespa)', retornoAa: 16, volAa: 22, nivelRisco: 4, garantia: 'Sem garantia' },
   { id: 'cripto', nome: 'Bitcoin', retornoAa: 25, volAa: 55, nivelRisco: 5, garantia: 'Sem garantia' },
 ]
+
+/* ============================================================
+   Rodada 3 — dados de compra/venda de imóvel (pesquisa 06/09/2026)
+   ============================================================ */
+
+/** ITBI 2026 — alíquota padrão por capital (leis municipais; reduções SFH existem
+ *  em SP/POA/Floripa/CWB/BSB para a parcela financiada, não modeladas aqui). */
+export const ITBI_CIDADES: Array<{ cidade: string; aliquota: number }> = [
+  { cidade: 'São Paulo', aliquota: 0.03 },
+  { cidade: 'Rio de Janeiro', aliquota: 0.03 },
+  { cidade: 'Belo Horizonte', aliquota: 0.03 },
+  { cidade: 'Curitiba', aliquota: 0.027 },
+  { cidade: 'Porto Alegre', aliquota: 0.03 },
+  { cidade: 'Salvador', aliquota: 0.03 },
+  { cidade: 'Brasília', aliquota: 0.02 },
+  { cidade: 'Florianópolis', aliquota: 0.02 },
+  { cidade: 'Outra capital', aliquota: 0.03 },
+]
+
+/**
+ * Escritura + registro (emolumentos de cartório) — calibrado nas tabelas oficiais
+ * SP (CNB/ARISP) e RJ (CGJ) de 2026: as tabelas são por faixa, degressivas e com
+ * quase-teto, então uma % linear erra nos extremos. Erro < ±15% vs. SP/RJ.
+ * 1º imóvel residencial financiado pelo SFH tem 50% de desconto (Lei 6.015/73, art. 290).
+ */
+export function custoCartorio(valor: number, primeiroImovelSfh = false): number {
+  const base = Math.min(4000 + 0.01 * valor, 11000)
+  return primeiroImovelSfh ? base * 0.5 : base
+}
+
+/** Tarifa mensal de administração do financiamento (Caixa cobra ~R$ 25; privados variam — zerável). */
+export const TARIFA_ADM_MENSAL = 25
+
+/** IPTU: alíquota EFETIVA típica sobre valor de MERCADO (nominal ~1% sobre venal;
+ *  venal costuma ficar 30–60% abaixo do mercado → efetivo ~0,4–0,7% a.a.). */
+export const IPTU_EFETIVO_AA = 0.005

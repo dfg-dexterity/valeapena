@@ -129,6 +129,109 @@ Inputs: custo do novo (default 15.000), revenda do atual (3.000), vida útil (1�
 Modelo: valor mensal = horas economizadas×valor hora; custo líquido inicial = custo − revenda atual; payback = mês em que valor acumulado ≥ custo acumulado com juros (CDI); VPL na vida útil incluindo revenda final; ROI.
 Saídas: Verdict (payback em meses vs vida útil; "cada mês sem trocar custa R$ X"), StatTiles (payback, VPL, horas/ano economizadas, valor gerado/mês), gráfico de linhas: valor acumulado × custo+juros (cruzamento = payback, 2 séries), barras de cenários (ganho 50%/100%/150% → VPL de cada, cor por sinal: negativo `c.negative`, positivo `c.positive` via `colorByValue`), tabela ano a ano. Nota: ganhos de produtividade só viram dinheiro se o tempo liberado tiver uso produtivo (InfoTip honesto).
 
+## Rodada 3 — Marca Dexterity, exportação e didática
+
+### R3.1 Marca Dexterity (tema global)
+
+Paleta oficial (manual em uso na empresa): Off White `#f7f3e7`, Grafite `#4d4d4d`, Verde Cerceta `#009994`, Roxo Flamingo `#98569A`, Amarelo Cromo `#FFA436`, Verde Musgo `#597C59`. Fontes: **Boston** (texto, pesos 400/600/700) e **Proxima Soft ExCn** (títulos/display, 500/700). Assets já copiados: `public/brand/fonts/*.otf`, `public/brand/logo-{cor,negativa,offwhite}.svg` (horizontais, viewBox 836×227), `public/brand/icone-d.png` (favicon 128px).
+
+**index.css** — substituir tokens mantendo TODOS os nomes (`--page`, `--surface`…, nada de renomear):
+- `@font-face`: Boston 400/600/700 e Proxima Soft ExCn 500/700, `src: url('/brand/fonts/…') format('opentype')`, `font-display: swap`. `--font-sans: 'Boston', system-ui…`; nova `--font-display: 'Proxima Soft ExCn', 'Boston', sans-serif` (expor no `@theme inline` como `--font-display` p/ classe `font-display`).
+- Dark (padrão) em grafite QUENTE: page `#171614`, surface `#211f1c`, surface-2 `#2a2824`, surface-3 `#34312c`, ink `#f7f3e7` (off white), ink-2 `#c9c4b2`, mute `#948f7d`, line `rgba(247,243,231,.11)`/strong `.19`, grid `#312f2a`, axis `#403d36`, accent `#1cb3ad` (cerceta clara p/ contraste), accent-ink `#08211f`? NÃO — accent-ink `#ffffff` só se contraste ≥4,5; com `#1cb3ad` use accent-ink `#0c2b29`. accent-soft `rgba(28,179,173,.15)`. positive/negative/warning mantêm semântica atual (verde/vermelho/âmbar — dinheiro precisa de vermelho; a paleta Dexterity não tem).
+- Light em OFF WHITE: page `#f7f3e7`, surface `#fffdf8`, surface-2 `#f0ebdc`, surface-3 `#e6e0cd`, ink `#33312c`, ink-2 `#5d5a4f`, mute `#8d887a`, line `rgba(77,77,77,.15)`/strong `.26`, grid `#e4decb`, axis `#c7c0aa`, accent `#00807b` (cerceta escurecida p/ AA em texto), accent-ink `#ffffff`, accent-soft `rgba(0,153,148,.12)`.
+- h1‑h3 e `.font-display`: família display. Números continuam em Boston + `.tnum`.
+
+**theme.tsx / useVizColors** — nova ordem fixa de séries (mantém semântica slot 0 = principal/“comprar”, 1 = alternativa, e distinção p/ daltonismo por matiz+luminância):
+- dark: `['#22c1ba', '#ffa436', '#c084c2', '#8fb08f', '#e87ba4', '#3987e5', '#c98500', '#e66767']`
+- light: `['#00807b', '#c56f00', '#98569a', '#597c59', '#c95c86', '#2a78d6', '#9c6a00', '#d03b3b']`
+- grid/axis/surface/ink acompanham os novos tokens acima. positive/negative/warning inalterados.
+
+**App.tsx** — TopBar: wordmark “vale a pena?” com `font-display` (peso 700, tracking normal); badge do ícone continua (bg-accent). Footer: logo Dexterity (`<img>` trocando por tema: `logo-cor.svg` no light, `logo-offwhite.svg` no dark, h-6, `alt="Dexterity"`) + linha “uma ferramenta Dexterity · vale a pena?”. **Adicionar rota `/tempo`** (lazy `pages/Tempo`) e entrada no TOOLS: label “Tempo”, title “Custo de oportunidade do seu tempo”, desc “Quanto vale sua hora — e quando vale mais investir em você, terceirizar tarefas ou proteger tempo de qualidade.”, icon `Hourglass`.
+
+**index.html** — `<title>vale a pena? · Dexterity</title>`, favicon `/brand/icone-d.png`, `<meta name="theme-color" content="#009994">`, preload de `Boston-Regular.otf` e `ProximaSoftExCn-Bold.otf` (`as="font" crossorigin`).
+
+**pages/Tempo.tsx** — criar PLACEHOLDER mínimo compilável (ToolPage com um Card “em construção”) — a página real vem na etapa seguinte.
+
+### R3.2 Exportação (todas as páginas)
+
+`src/components/ui.tsx` ganha:
+- `usePrintExport()` — hook: se tema atual é dark, troca p/ light, espera ~450 ms (recharts re-render), `window.print()`, e restaura o tema no `afterprint`. ThemeProvider ganha `set(theme)` além de `toggle`.
+- `ExportBar({ pagina, resumo, csv, premissas })`:
+  - `pagina: string` (slug p/ nome de arquivo), `resumo: string` (texto multi-linha pronto), `csv?: { nome: string; colunas: string[]; linhas: (string|number)[][] }`, `premissas?: [string, string][]`.
+  - Renderiza barra compacta (borda `line`, ícones lucide `Printer`/`FileDown`/`Copy`) com 3 botões: **“PDF / imprimir”** (usePrintExport), **“CSV”** (só se `csv`; gera com BOM `﻿`, separador `;`, decimais com vírgula — Excel pt-BR — e baixa via Blob), **“Copiar resumo”** (clipboard; feedback “Copiado ✓” por 2 s).
+  - Renderiza também `<div className="print-only">` com: logo Dexterity, título da página, data (`new Date().toLocaleDateString('pt-BR')`), e grade 2 colunas das `premissas` — visível SÓ na impressão.
+- CSS de impressão em index.css (`@media print`, DEPOIS dos blocos de tema): esconde `header, footer, nav`, coluna de inputs (`.print-hide`), a própria ExportBar (botões), Collapse fechados; `.print-only { display: block }` (na tela, `display: none`); resultados em coluna única largura total; `print-color-adjust: exact`; fundo branco (redefinir tokens claros em `:root` dentro do `@media print` — cobre o caso raro de imprimir antes do switch de tema).
+- `ToolPage` marca a coluna de inputs com `print-hide`.
+- Cada página monta `resumo`/`csv`/`premissas` com seus números REAIS e coloca `<ExportBar>` logo abaixo do `Verdict`.
+
+### R3.3 “Entenda o resultado” (didática, todas as páginas)
+
+`ui.tsx` ganha `Didatico({ passos, analogia, sensibilidade })`:
+- `passos: { t: string; d: ReactNode }[]` — passo a passo numerado (círculos com número em `accent-soft`), título curto + explicação em linguagem de 6º ano.
+- `analogia?: ReactNode` — caixa destacada (`surface-2`, ícone `Lightbulb`) “Em outras palavras…”.
+- `sensibilidade?: ReactNode` — caixa “O que mudaria a resposta” (ícone `SlidersHorizontal`).
+- Renderiza como `Card title="Entenda o resultado"` com ícone `GraduationCap`, posicionado no FIM dos resultados (antes de premissas/fontes).
+Regras de conteúdo (cada página): os textos interpolam os NÚMEROS ATUAIS do usuário (nunca texto estático); explicar VPL como “trouxemos tudo para dinheiro de hoje, porque R$ 100 daqui a 5 anos valem menos que R$ 100 agora — dá para saber quanto seus R$ 100 renderiam no CDI”; 3–5 passos; 1 analogia concreta do cotidiano; 1 frase de sensibilidade honesta (“se X mudar para Y, o resultado inverte”).
+
+### R3.4 rates.tsx — IGP-M e fallbacks set/2026
+
+- Novo campo `igpm12m` (% acumulado 12 m). Não há série SGS pronta com CORS p/ 12 m: buscar `bcdata.sgs.189/dados/ultimos/12` e compor `(∏(1+vᵢ/100) − 1)×100`; falhou → fallback.
+- FALLBACK_RATES capturado em 06/09/2026: selic 14.00, cdi 13.90, ipca12m 4.44, trMes 0.1690, poupancaMes 0.6698, imobMercado 14.28, imobRegulado 10.92, imobTotal 11.30, veiculos 26.52, igpm12m 2.18, referencia 'set/2026'.
+
+### R3.5 Morar v3 — precisão e dados de mercado (pesquisa 06/09/2026)
+
+Já adicionados em `dados2026.ts`: `ITBI_CIDADES`, `custoCartorio(valor, primeiroImovelSfh)`, `TARIFA_ADM_MENSAL` (25), `IPTU_EFETIVO_AA` (0,005), `REGRAS_IMOBILIARIO.taxaAvaliacao` agora 3100; em `tax2026.ts`: `irGanhoCapitalImovel(ganho, mesesPosse)`. `rates.igpm12m` disponível (R3.4).
+
+1. **Defaults recalibrados (FipeZap jul–ago/2026):** aluguel user-override passa de 0,45% → **0,51% do valor/mês** (yield 6,14% a.a., FipeZap jul/2026); valorização default 5,0 → **5,5% a.a.** (venda 12m +5,49%, ago/2026); condomínio referência `max(450, valor×0,0007…)` → **`max(530, round(valor × 0,0010 / 10) × 10)`** (Censo Condominial 2026: média nacional R$ 527/mês; SP R$ 1.085 — InfoTip cita os dois).
+2. **Índice de reajuste do aluguel** — substituir o slider único por Segmented **IGP-M | IPCA | Outro**: IGP-M usa `rates.igpm12m` (2,16%) e é o DEFAULT (índice dominante nos contratos); IPCA usa `rates.ipca12m` (4,44%); Outro abre o slider atual. InfoTip: "hoje o IGP-M reajusta MENOS que o IPCA — nem sempre foi assim (2021: IGP-M ~37%)". LiveBadge nos dois primeiros.
+3. **ITBI por cidade** — select/Segmented compacto de `ITBI_CIDADES` acima do slider de ITBI %: escolher cidade seta o slider (user-override continua editável). Nota: reduções SFH p/ parcela financiada existem em SP/POA/Floripa/CWB/BSB (não modeladas — citar no InfoTip).
+4. **Cartório por tabela real** — trocar `registroPct` (% linear) por `custoCartorio(valor, primeiroSfh)` com Toggle "1º imóvel financiado pelo SFH (–50% de emolumentos, Lei 6.015/73 art. 290)" default off. Mostrar o valor em R$ no hint. Avaliação bancária: usar `REGRAS_IMOBILIARIO.taxaAvaliacao` (3100), só se financiado (como hoje).
+5. **Tarifa de administração** — cenário financiado soma `TARIFA_ADM_MENSAL` (R$ 25/mês, slider 0–50 no avançado — privados às vezes isentam) aos extras mensais junto de MIP/DFI.
+6. **IR sobre ganho de capital na venda** (novo, no fim do horizonte): custo de aquisição = preço + ITBI + cartório (IN SRF 84/2001); ganho = valorFinal×(1−corretagem)? NÃO — ganho tributável usa preço de venda CHEIO menos custo de aquisição (corretagem também deduz do preço de venda — IN 84/2001 permite deduzir corretagem paga pelo vendedor: ganho = valorFinal×(1−corret) − custoAquis). IR = `irGanhoCapitalImovel(ganho, N_meses)`. Toggle no avançado: "Terei isenção na venda (art. 39: comprar outro imóvel em 180 dias, 1×/5 anos — ou único imóvel ≤ R$ 440 mil)" default **on** (caso típico de quem vende para morar em outro) → IR = 0; quando off, o IR reduz a venda líquida no mês N (e some na linha do gráfico/composição como parte da transação). Isenção automática: se venda ≤ 440 mil, IR = 0 com nota. StatTile/nota mostrando o IR estimado quando > 0.
+7. **IPTU (rigor)** — Toggle no Collapse "Custos do dono × do inquilino": "No aluguel, o contrato repassa o IPTU ao inquilino?" default **sim** (mercado; IPTU segue fora dos dois lados). Se **não**: lado COMPRAR soma IPTU mensal = `IPTU_EFETIVO_AA`(slider 0,2–1,0%, default 0,5)×valorAtualizado/12 (só o dono paga). InfoTip: art. 22 VIII Lei 8.245/91.
+8. **Manutenção** — hint atualizado: 0,5%/ano é típico de APARTAMENTO (condomínio absorve estrutura); casa: usar ~1,0%.
+9. **Premissas/fontes** — atualizar bullets: FipeZap jul–ago/2026 (yield 6,14%, venda +5,49%), FGV IGP-M ago/2026, Censo Condominial 2026, tabelas CNB-SP/ARISP/CGJ-RJ 2026, Lei 13.259/2016 + Lei 11.196/2005 (FR2), art. 290 Lei 6.015/73.
+10. **Guards**: identidades da composição continuam exatas (IR e cartório entram em `transVP`); aluguel de equilíbrio continua correto (IR não depende do aluguel — entra no lado buy; re-derivar `k`/fixos se necessário). Sem NaN em extremos (ganho negativo → IR 0).
+
+### R3.6 Tempo.tsx — Custo de oportunidade do seu tempo (página NOVA)
+
+Rota `/tempo` (TOOLS já criado na R3.1). Ícone `Hourglass`. Compara o valor REAL da hora com três usos do tempo/dinheiro. Base científica pesquisada em 06/09/2026 — citar fontes nos InfoTips e no card de premissas (URLs abaixo).
+
+**Inputs — Card "Seu trabalho hoje":**
+- Renda líquida mensal (slider 1.500–50.000, step 100, default 5.000; InfoTip: renda média BR T1/2026 = R$ 3.722, PNAD).
+- Horas contratadas/semana (20–60, default 44) · Horas extras habituais/semana (0–30, default 0).
+- Dias presenciais/semana (0–7, default 5) · Deslocamento porta-a-porta ida+volta, min/dia (0–240, default 60; InfoTip IPEA: média BR ~30 min/trajeto, SP/RJ +31%).
+- Preparo + descompressão, min/dia (0–120, default 45; InfoTip Your Money or Your Life).
+- Gastos que só existem por causa do trabalho, R$/mês (user-override: default 8% da renda; transporte, roupa, comida fora, "recompensas").
+
+**Motor — custo-hora real (YMOYL, Vicki Robin):**
+```
+horasSemana = contratada + extra + (desloc/60)×diasPresenciais + (prep/60)×diasTrabalho(=5)
+horasMes    = horasSemana × 4,345
+wNominal    = renda / (contratada × 4,345)
+wReal       = (renda − gastosTrabalho) / horasMes
+```
+Hero: par de StatTiles "sua hora no contracheque R$ X" × "sua hora de verdade R$ Y (−Z%)" + tile horas reais/mês + tile "1h/dia desperdiçada = R$ W/mês" (= wReal×21,7).
+
+**Card "O que você quer avaliar" — Segmented `modo` (3 análises, cada uma com seus inputs + resultados):**
+
+A) **Investir em você (skill)** — inputs: tipo (select com ΔW default: Certificação profissional +8% | Inglês fluente +15% | Pós/especialização +10% | Treinamento curto +3% | Personalizado), custo total R$ (default 5.000), horas de estudo/semana (1–20, default 5), duração do estudo em meses (3–36, default 12), chance de capturar o aumento % (30–90, default 60; InfoTip: nem todo curso vira aumento — parâmetro seu, não ciência), horizonte de carreira anos (3–30, default 15). Avançado: fração do estudo que sai do trabalho/lazer pago k (0–1, default 0,5), desconto real % a.a. (default 7,0 — juro real Tesouro IPCA+ 2026; TUDO nesta análise em termos REAIS, sem inflação).
+Modelo: `custoTotal = custo + horasEstudo×4,345×duração×wReal×k`; benefício anual pleno = `renda×12×ΔW%×p`; rampa Card-Kluve-Weber: ano 1 = 25%, ano 2 = 60%, ano 3+ = 100% (contada APÓS o fim do estudo); `VPL = Σ benefício_t/(1+r)^t − custoTotal` (t em anos, horizonte T). Saídas: Verdict (VPL + payback em anos + "aumento mínimo p/ empatar com o Tesouro IPCA+" resolvido de ΔW), linha VPL acumulado × anos (cruza zero no payback; série 0), barras de sensibilidade (ΔW×0,5 | ΔW | ΔW×1,5 → VPL, cor por sinal), nota Pencavel se horasSemana+horasEstudo > 50 ("acima de ~50h/semana sua produtividade por hora cai — parte do estudo vai sair do seu rendimento").
+B) **Terceirizar tarefas** — inputs: tarefa (Segmented: Faxina R$ 380/mês·12h | Cozinhar/marmita R$ 700/mês·20h | Lavanderia R$ 250/mês·6h | Personalizado) com preço R$/mês e horas liberadas/mês editáveis; "você detesta essa tarefa?" (Segmented: gosto 0,8 | tanto faz 1,0 | detesto 1,3); "o que fará com o tempo?" (Segmented: já sei (trabalho, estudo, família, lazer ativo) 1,0 | não sei 0,5).
+Modelo: `valorHoraLiberada = wReal×fDesgosto×fUso`; `ganhoMes = horas×valorHoraLiberada − preço`; `precoHora = preço/horas`. Saídas: Verdict ("cada hora liberada custa R$ A e vale R$ B para você" + ganho/mês), barras comparando preço×valor (2 barras), nota Whillans PNAS 2017 (6.271 adultos; comprar tempo → mais satisfação; só 2% pensam nisso).
+C) **Hora extra × tempo de qualidade** — inputs: horas extras adicionais/semana (1–20, default 4), adicional sobre a hora (%: 50 CLT | 0 PJ sem adicional | custom, default 50), "de onde sai o tempo?" (Segmented: lazer | família | sono).
+Modelo: valor bruto hora extra = `wNominal×(1+adicional)`; se `horasTotais > 50`, aplicar fator Pencavel `max(0,6, 1 − 0,04×(horasTotais−50))` por hora acima de 50 (rotulado como aproximação didática do decaimento); ΔrendaPct = rendaExtra/renda; leitura log-linear (Killingsworth/KKM 2023): mostrar "essas horas aumentam sua renda em X% — o bem-estar sobe com o LOG da renda: dobrar de 3 p/ 6 mil vale tanto quanto de 10 p/ 20 mil". Saídas: Verdict (R$/mês extra e valor efetivo/hora após o desconto de produtividade), curva "valor efetivo da hora × horas semanais totais" com ReferenceLine em 50h (refY não — refX? usar refY se o wrapper só tem refY: então plotar linha horizontal = wNominal e curva decaindo; escolher o que o wrapper suportar), e os ALERTAS ASSIMÉTRICOS (nunca monetizar): família → Milkie 2015 ("com adolescentes, tempo ENGAJADO protege — essa troca ameaça blocos que não têm preço"); sono/lazer → Kasser & Sheldon (time affluence) + Whillans. Se deslocamento aumentar em algum cenário → Stutzer & Frey (−0,28 pt de satisfação por +1h; salário maior normalmente NÃO compensa).
+
+**Regras de honestidade (obrigatórias, da pesquisa):** f_desgosto/f_uso/k/p/rampa/fator Pencavel são PARÂMETROS DE DESIGN rotulados como tal (InfoTip "convenção do app inspirada em X, não medida científica"); tempo de família NUNCA vira R$; alertas só CONTRA reduzir blocos de família, nunca a favor. Card "Premissas e fontes" com as citações: Robin & Dominguez (YMOYL), Whillans et al. PNAS 2017, Psacharopoulos & Patrinos 2018 (~9–10%/ano; ALC 11%), OCDE EAG 2025 (BR +148% superior), Card-Kluve-Weber 2018 (rampa 2–3 anos), Pencavel 2015 (~50h), Stutzer & Frey 2008, Killingsworth 2021 + KKM 2023, Milkie 2015 / Hsin & Felfe 2014, Kasser & Sheldon 2009.
+**Didatico:** mensagens 1 (hora real), 2 (comprar tempo), 7 (50h), 9 (log da renda) e 10 (família) da pesquisa, interpoladas com os números do usuário. ExportBar completa (CSV = tabela do modo ativo; resumo = wReal + veredito do modo).
+
+### R3.7 ExportBar + Didatico em TODAS as páginas
+
+Cada página (Carro, Imovel, Morar, Investimentos, Risco, PjClt, Computador, Tempo):
+1. `<ExportBar>` logo abaixo do `Verdict`, com: `pagina` (slug), `resumo` (texto multi-linha: veredito com números + 3–5 linhas-chave + "gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app"), `csv` (a tabela principal da página: mesmas linhas do DataTable de detalhamento), `premissas` (pares [label, valor] dos inputs relevantes — TODOS os que afetam a conta, formatados).
+2. `<Didatico>` no fim dos resultados (antes de premissas/fontes): 3–5 passos com os números REAIS calculados, 1 analogia, 1 sensibilidade. Conteúdo específico por página (ex.: Carro explica depreciação+VPL; Investimentos explica IR regressivo e por que isento ≠ melhor; Risco explica p10/p90 e "risco não é ruim, é preço"; PjClt explica Fator R e o custo invisível do deslocamento; Computador explica payback).
+3. Não alterar a matemática existente das 6 páginas antigas (exceto Morar, R3.5).
+
 ## Qualidade
 
 - `npx tsc --noEmit` limpo (strict, noUnusedLocals). Rodar antes de terminar.

@@ -4,6 +4,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   LiveBadge,
   NumberField,
   SectionTitle,
@@ -18,7 +20,13 @@ import { VBarChart, VLineChart, type SeriesDef } from '../components/charts'
 import { useRates } from '../lib/rates'
 import { aToM, mToA, priceSchedule, sacSchedule, totalOf, type AmortRow } from '../lib/finance'
 import { brl, brlCents, brlCompact, meses, num, pct } from '../lib/format'
-import { BANCOS_IMOBILIARIO, DFI_ALIQUOTA_MES, REGRAS_IMOBILIARIO, mipAliquota } from '../lib/dados2026'
+import {
+  BANCOS_IMOBILIARIO,
+  DFI_ALIQUOTA_MES,
+  REGRAS_IMOBILIARIO,
+  TARIFA_ADM_MENSAL,
+  mipAliquota,
+} from '../lib/dados2026'
 
 type Sistema = 'sac' | 'price'
 
@@ -79,7 +87,7 @@ const SERIES_SISTEMAS: SeriesDef[] = [
 const SERIES_COMPOSICAO: SeriesDef[] = [
   { key: 'principal', name: 'Principal', colorIndex: 0 },
   { key: 'juros', name: 'Juros', colorIndex: 1 },
-  { key: 'seguros', name: 'Seguros (MIP + DFI)', colorIndex: 2 },
+  { key: 'seguros', name: 'Seguros + tarifa (MIP, DFI, adm)', colorIndex: 2 },
 ]
 
 const ANOS_TABELA = [1, 2, 3, 5, 8, 10, 15, 20, 25, 30, 35]
@@ -102,6 +110,7 @@ export default function Imovel() {
   const [registroPct, setRegistroPct] = useState(REGRAS_IMOBILIARIO.registroPct * 100)
   const [taxaAvaliacao, setTaxaAvaliacao] = useState<number>(REGRAS_IMOBILIARIO.taxaAvaliacao)
   const [dfiMesPct, setDfiMesPct] = useState(DFI_ALIQUOTA_MES * 100)
+  const [tarifaAdm, setTarifaAdm] = useState<number>(TARIFA_ADM_MENSAL)
 
   const taxaAa = taxaUser ?? rates.imobMercado
 
@@ -111,8 +120,9 @@ export default function Imovel() {
     const trAnualizadaPct = (Math.pow(1 + rates.trMes / 100, 12) - 1) * 100
     const jurosMes = aToM(taxaAa + (usarTr ? trAnualizadaPct : 0))
     const dfiMes = (valorImovel * Math.max(0, dfiMesPct)) / 100
+    const admMes = Math.max(0, tarifaAdm)
     const extrasFn = (mes: number, saldo: number) =>
-      saldo * mipAliquota(idade + (mes - 1) / 12) + dfiMes
+      saldo * mipAliquota(idade + (mes - 1) / 12) + dfiMes + admMes
 
     const sac = sacSchedule(financiado, jurosMes, prazo, extrasFn)
     const price = priceSchedule(financiado, jurosMes, prazo, extrasFn)
@@ -157,6 +167,20 @@ export default function Imovel() {
     const totalSac = totalOf(sac, 'parcela')
     const totalPrice = totalOf(price, 'parcela')
 
+    // sensibilidade para o Didatico: entrada +10 p.p. e prazo −5 anos, no sistema escolhido
+    const scheduleFn = sistema === 'sac' ? sacSchedule : priceSchedule
+    const entradaAltPct = Math.min(90, entradaPct + 10)
+    const jurosEntradaAlt =
+      entradaAltPct > entradaPct
+        ? totalOf(
+            scheduleFn(Math.max(0, valorImovel * (1 - entradaAltPct / 100)), jurosMes, prazo, extrasFn),
+            'juros',
+          )
+        : totalJuros
+    const prazoAlt = Math.max(60, prazo - 60)
+    const jurosPrazoAlt =
+      prazoAlt < prazo ? totalOf(scheduleFn(financiado, jurosMes, prazoAlt, extrasFn), 'juros') : totalJuros
+
     return {
       entrada,
       financiado,
@@ -177,8 +201,12 @@ export default function Imovel() {
       composicao,
       totalSac,
       totalPrice,
+      entradaAltPct,
+      jurosEntradaAlt,
+      prazoAlt,
+      jurosPrazoAlt,
     }
-  }, [valorImovel, entradaPct, sistema, prazo, taxaAa, usarTr, idade, itbiPct, registroPct, taxaAvaliacao, dfiMesPct, rates.trMes])
+  }, [valorImovel, entradaPct, sistema, prazo, taxaAa, usarTr, idade, itbiPct, registroPct, taxaAvaliacao, dfiMesPct, tarifaAdm, rates.trMes])
 
   /* ------------------------- Veredito e avisos ------------------------- */
 
@@ -202,27 +230,73 @@ export default function Imovel() {
 
   /* --------------------------- Tabela amostrada --------------------------- */
 
-  const tabela = useMemo(() => {
-    const rows: ReactNode[][] = []
+  const cronograma = useMemo(() => {
+    const out: Array<{ label: string; r: AmortRow }> = []
     const usados = new Set<number>()
     const linha = (label: string, m: number) => {
       const r = sim.chosen[m - 1]
       if (!r || usados.has(m)) return
       usados.add(m)
-      rows.push([
+      out.push({ label, r })
+    }
+    linha('1º mês', 1)
+    for (const a of ANOS_TABELA) if (a * 12 <= prazo) linha(`ano ${a}`, a * 12)
+    linha(`mês ${prazo} (fim)`, prazo)
+    return out
+  }, [sim.chosen, prazo])
+
+  const tabela = useMemo<ReactNode[][]>(
+    () =>
+      cronograma.map(({ label, r }) => [
         label,
         brlCents(r.parcela),
         brlCents(r.juros),
         brlCents(r.amortizacao),
         brlCents(r.extras ?? 0),
         brl(r.saldo),
-      ])
-    }
-    linha('1º mês', 1)
-    for (const a of ANOS_TABELA) if (a * 12 <= prazo) linha(`ano ${a}`, a * 12)
-    linha(`mês ${prazo} (fim)`, prazo)
-    return rows
-  }, [sim.chosen, prazo])
+      ]),
+    [cronograma],
+  )
+
+  /* ----------------------------- Exportação ----------------------------- */
+
+  const round2 = (v: number) => Math.round(v * 100) / 100
+  const csv = {
+    nome: 'cronograma',
+    colunas: ['Período', 'Mês', 'Parcela (R$)', 'Juros (R$)', 'Amortização (R$)', 'Seguros + tarifa (R$)', 'Saldo devedor (R$)'],
+    linhas: cronograma.map(({ label, r }) => [
+      label,
+      r.mes,
+      round2(r.parcela),
+      round2(r.juros),
+      round2(r.amortizacao),
+      round2(r.extras ?? 0),
+      round2(r.saldo),
+    ]),
+  }
+
+  const resumo = [
+    `Financiamento imobiliário — ${nomeSistema}, ${meses(prazo)}`,
+    cabe
+      ? `Cabe na sua renda: a 1ª parcela compromete ${pct(compRenda * 100, 0)} da renda de ${brl(renda)}.`
+      : `Não cabe ainda: exige renda familiar mínima de ${brl(sim.rendaMinima)}.`,
+    `Imóvel de ${brl(valorImovel)} · entrada de ${pct(entradaPct, 0)} (${brl(sim.entrada)}) · financia ${brl(sim.financiado)}`,
+    `1ª parcela: ${brlCents(sim.p1)} (com MIP, DFI e tarifa) · última: ${brlCents(sim.pUltima)}`,
+    `Total pago ao banco: ${brl(sim.totalPago)} — ${brl(sim.totalJuros)} de juros + ${brl(sim.totalSeguros)} de seguros e tarifa`,
+    `CET aproximado: ${pct(sim.cet, 2)} a.a. (taxa contratada de ${pct(taxaAa, 2)} a.a.${usarTr ? ' + TR' : ''})`,
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  const premissas: [string, string][] = [
+    ['Valor do imóvel', brl(valorImovel)],
+    ['Entrada', `${pct(entradaPct, 0)} (${brl(sim.entrada)})`],
+    ['Sistema', nomeSistema],
+    ['Prazo', meses(prazo)],
+    ['Taxa efetiva', `${pct(taxaAa, 2)} a.a.`],
+    ['TR', usarTr ? `${pct(rates.trMes, 4)} a.m. ≈ ${pct(sim.trAnualizadaPct, 2)} a.a.` : 'não somada'],
+    ['Idade', `${num(idade)} anos`],
+    ['Renda familiar bruta', brl(renda)],
+  ]
 
   /* ------------------------------- Página ------------------------------- */
 
@@ -394,7 +468,7 @@ export default function Imovel() {
                 suffix="R$"
                 min={0}
                 step={100}
-                hint="Cobrada pelo banco para avaliar o imóvel (Caixa: R$ 2.200–3.000). Entra no cálculo do CET."
+                hint="Cobrada pelo banco para avaliar o imóvel (Caixa 2026: ~R$ 3.100). Entra no cálculo do CET."
               />
               <NumberField
                 label="DFI (seguro do imóvel)"
@@ -405,6 +479,16 @@ export default function Imovel() {
                 max={0.1}
                 step={0.005}
                 hint="Seguro de Danos Físicos do Imóvel, obrigatório: alíquota mensal sobre o valor de avaliação do imóvel (típico: 0,01% a.m.)."
+              />
+              <SliderField
+                label="Tarifa de administração"
+                value={tarifaAdm}
+                onChange={setTarifaAdm}
+                min={0}
+                max={50}
+                step={1}
+                format={v => `${brl(v)}/mês`}
+                hint="Tarifa mensal de administração do contrato: a Caixa cobra ~R$ 25/mês; bancos privados às vezes isentam. Entra na parcela e no CET, junto de MIP e DFI."
               />
             </div>
           </Collapse>
@@ -420,7 +504,7 @@ export default function Imovel() {
             }
             detail={
               <>
-                No {nomeSistema}, a primeira parcela ({brlCents(sim.p1)}, já com seguros) compromete{' '}
+                No {nomeSistema}, a primeira parcela ({brlCents(sim.p1)}, já com seguros e tarifa) compromete{' '}
                 <strong className="text-ink">{pct(compRenda * 100, 0)}</strong> da renda de {brl(renda)} — os
                 bancos aceitam até 30%, o que exige renda familiar mínima de{' '}
                 <strong className="text-ink">{brl(sim.rendaMinima)}</strong>.{' '}
@@ -432,6 +516,8 @@ export default function Imovel() {
             tone={cabe ? 'positive' : 'negative'}
             badge={dentroSfh ? 'Elegível a FGTS · SFH' : `Acima do teto SFH (${brlCompact(REGRAS_IMOBILIARIO.tetoSfh)})`}
           />
+
+          <ExportBar pagina="imovel" resumo={resumo} csv={csv} premissas={premissas} />
 
           {(!entradaOk || !idadeOk || cetAcimaTeto) && (
             <div className="space-y-2">
@@ -486,14 +572,14 @@ export default function Imovel() {
               value={sim.totalJuros}
               format={brl}
               tone="negative"
-              sub={`+ ${brl(sim.totalSeguros)} de seguros`}
+              sub={`+ ${brl(sim.totalSeguros)} de seguros e tarifa`}
             />
             <StatTile
               label="CET aproximado"
               value={sim.cet}
               format={v => `${pct(v, 2)} a.a.`}
               tone="accent"
-              sub="TIR c/ seguros e avaliação"
+              sub="TIR c/ seguros, tarifa e avaliação"
             />
             <StatTile
               label="Custos de transação"
@@ -505,7 +591,7 @@ export default function Imovel() {
 
           <Card
             title="Parcela ao longo do tempo — SAC × Price"
-            subtitle={`Com TR ${usarTr ? 'incluída' : 'desligada'}, MIP e DFI.${mostrarLimite ? ' Linha tracejada = limite de 30% da sua renda.' : ''}`}
+            subtitle={`Com TR ${usarTr ? 'incluída' : 'desligada'}, MIP, DFI e tarifa de administração.${mostrarLimite ? ' Linha tracejada = limite de 30% da sua renda.' : ''}`}
           >
             <VLineChart
               data={sim.parcelaData}
@@ -554,11 +640,96 @@ export default function Imovel() {
             subtitle={`Cronograma amostrado — sistema ${nomeSistema}, ${meses(prazo)}. Valores da parcela do mês indicado.`}
           >
             <DataTable
-              columns={['Período', 'Parcela', 'Juros', 'Amortização', 'Seguros', 'Saldo devedor']}
+              columns={['Período', 'Parcela', 'Juros', 'Amortização', 'Seguros + tarifa', 'Saldo devedor']}
               align={['l', 'r', 'r', 'r', 'r', 'r']}
               rows={tabela}
             />
           </Card>
+
+          <Didatico
+            passos={[
+              {
+                t: 'SAC começa mais alto e cai; Price é quase fixa',
+                d: (
+                  <>
+                    No SAC, você devolve um pedaço igual da dívida todo mês — a 1ª parcela é{' '}
+                    <strong className="tnum text-ink">{brlCents(sim.sac[0]?.parcela ?? 0)}</strong> e vai
+                    caindo até {brlCents(sim.sac[sim.sac.length - 1]?.parcela ?? 0)} no fim. Na Price, a
+                    parcela começa menor, em{' '}
+                    <strong className="tnum text-ink">{brlCents(sim.price[0]?.parcela ?? 0)}</strong>, e fica
+                    praticamente igual até o fim. Como na Price a dívida demora mais para cair, ela sai{' '}
+                    {brl(Math.abs(sim.totalPrice - sim.totalSac))}{' '}
+                    {sim.totalPrice >= sim.totalSac ? 'mais cara' : 'mais barata'} no total deste cenário.
+                  </>
+                ),
+              },
+              {
+                t: 'O que é o CET — e por que é maior que a taxa anunciada',
+                d: (
+                  <>
+                    A taxa contratada aqui é {pct(taxaAa, 2)} a.a.
+                    {usarTr ? ` (+ TR de ${pct(sim.trAnualizadaPct, 2)} a.a.)` : ''}, mas o Custo Efetivo
+                    Total calculado é <strong className="tnum text-ink">{pct(sim.cet, 2)} a.a.</strong> O CET
+                    soma tudo o que sai do seu bolso além dos juros: os seguros MIP e DFI, a tarifa de
+                    administração de {brl(tarifaAdm)}/mês e a avaliação de {brl(taxaAvaliacao)}. É esse
+                    número — não a taxa do anúncio — que serve para comparar bancos.
+                  </>
+                ),
+              },
+              {
+                t: 'Por que a sua idade muda a parcela',
+                d: (
+                  <>
+                    O banco exige o seguro MIP: se o titular morrer ou ficar inválido, o seguro quita a
+                    dívida. Quanto maior a idade, mais caro ele fica — e a sua idade avança durante o
+                    contrato. Com {num(idade)} anos hoje, seguros e tarifa somam{' '}
+                    <strong className="tnum text-ink">{brl(sim.totalSeguros)}</strong> ao longo dos{' '}
+                    {meses(prazo)}, já embutidos nas parcelas.
+                  </>
+                ),
+              },
+              {
+                t: 'Quanto você paga no total',
+                d: (
+                  <>
+                    Para receber {brl(sim.financiado)} emprestados, você devolve{' '}
+                    <strong className="tnum text-ink">{brl(sim.totalPago)}</strong> em {meses(prazo)} —{' '}
+                    {sim.financiado > 0 ? `${num(sim.totalPago / sim.financiado, 1)}× o valor financiado` : '—'},
+                    sendo {brl(sim.totalJuros)} só de juros.
+                  </>
+                ),
+              },
+            ]}
+            analogia={
+              <>
+                Financiar é como alugar dinheiro: os juros são o “aluguel” que você paga enquanto ainda não
+                devolveu tudo. No SAC você devolve um pedaço grande e igual todo mês, então o “aluguel” cai
+                rápido. Na Price você devolve pouquinho no começo e paga “aluguel” sobre uma dívida alta por
+                mais tempo — por isso a parcela é mais leve agora, mas o total é maior.
+              </>
+            }
+            sensibilidade={
+              <>
+                {sim.entradaAltPct > entradaPct && (
+                  <>
+                    Se a entrada subir de {pct(entradaPct, 0)} para {pct(sim.entradaAltPct, 0)}, os juros
+                    totais caem de {brl(sim.totalJuros)} para {brl(sim.jurosEntradaAlt)} — economia de{' '}
+                    <strong className="tnum text-ink">{brl(sim.totalJuros - sim.jurosEntradaAlt)}</strong>.{' '}
+                  </>
+                )}
+                {sim.prazoAlt < prazo && (
+                  <>
+                    Encurtar o prazo de {meses(prazo)} para {meses(sim.prazoAlt)} derruba os juros para{' '}
+                    {brl(sim.jurosPrazoAlt)} (−{brl(sim.totalJuros - sim.jurosPrazoAlt)}) — a parcela sobe,
+                    mas a dívida encolhe muito mais rápido.
+                  </>
+                )}
+                {sim.entradaAltPct <= entradaPct && sim.prazoAlt >= prazo && (
+                  <>Mais entrada ou menos prazo reduzem os juros totais — teste nos controles ao lado.</>
+                )}
+              </>
+            }
+          />
 
           <Card title="Premissas e fontes">
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-mute">
@@ -569,12 +740,13 @@ export default function Imovel() {
               <li>
                 Seguros obrigatórios: MIP com alíquota mensal por idade sobre o saldo devedor (tabela típica
                 de mercado, idade avançando durante o contrato) e DFI de {pct(dfiMesPct, 3)} a.m. sobre o
-                valor do imóvel.
+                valor do imóvel. Tarifa de administração de {brl(tarifaAdm)}/mês somada à parcela (Caixa
+                2026: ~R$ 25; privados às vezes isentam).
               </li>
               <li>
                 CET aproximado = TIR mensal anualizada dos fluxos: valor liberado (financiado − tarifa de
-                avaliação) contra as parcelas cheias. ITBI e registro ficam fora do CET porque são pagos ao
-                município/cartório, não ao banco.
+                avaliação) contra as parcelas cheias (com seguros e tarifa de administração). ITBI e registro
+                ficam fora do CET porque são pagos ao município/cartório, não ao banco.
               </li>
               <li>
                 Regras do novo modelo do crédito imobiliário (out/2025): LTV máximo de 80% no SAC e 70% na

@@ -1,5 +1,15 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, HelpCircle } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  ChevronDown,
+  Copy,
+  FileDown,
+  GraduationCap,
+  HelpCircle,
+  Lightbulb,
+  Printer,
+  SlidersHorizontal,
+} from 'lucide-react'
+import { useTheme } from '../theme'
 
 /* ============================================================
    Blocos de layout
@@ -54,7 +64,7 @@ export function Collapse({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="rounded-xl border border-line">
+    <div data-collapse={open ? 'open' : 'closed'} className="rounded-xl border border-line">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -487,6 +497,206 @@ export function LiveBadge({ live, referencia }: { live: boolean; referencia: str
   )
 }
 
+/* ============================================================
+   Exportação (PDF/impressão, CSV, resumo)
+   ============================================================ */
+
+/**
+ * Imprime a página sempre no tema claro: se o tema atual for dark,
+ * troca para light, espera o re-render dos gráficos (~450 ms),
+ * chama `window.print()` e restaura o tema no `afterprint`.
+ */
+export function usePrintExport() {
+  const { theme, set } = useTheme()
+  return useCallback(() => {
+    if (theme === 'dark') {
+      const restore = () => {
+        set('dark')
+        window.removeEventListener('afterprint', restore)
+      }
+      window.addEventListener('afterprint', restore)
+      set('light')
+      window.setTimeout(() => window.print(), 450)
+    } else {
+      window.print()
+    }
+  }, [theme, set])
+}
+
+function csvCell(v: string | number): string {
+  const s = typeof v === 'number' ? String(v).replace('.', ',') : v
+  return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function tituloDoSlug(slug: string): string {
+  const s = slug.replace(/-/g, ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/**
+ * Barra de exportação: PDF/imprimir, CSV (Excel pt-BR) e copiar resumo.
+ * Inclui um cabeçalho `.print-only` (logo Dexterity + título + data +
+ * premissas) visível apenas na impressão.
+ */
+export function ExportBar({
+  pagina,
+  resumo,
+  csv,
+  premissas,
+}: {
+  /** slug para nome de arquivo (ex.: "morar") */
+  pagina: string
+  /** texto multi-linha pronto para a área de transferência */
+  resumo: string
+  csv?: { nome: string; colunas: string[]; linhas: (string | number)[][] }
+  premissas?: [string, string][]
+}) {
+  const print = usePrintExport()
+  const [copiado, setCopiado] = useState(false)
+
+  const baixarCsv = useCallback(() => {
+    if (!csv) return
+    const linhas = [csv.colunas, ...csv.linhas]
+    const corpo = linhas.map(l => l.map(csvCell).join(';')).join('\r\n')
+    // BOM para o Excel pt-BR reconhecer UTF-8; separador ";" e decimais com vírgula
+    const blob = new Blob(['\ufeff' + corpo], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${pagina}-${csv.nome}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, [csv, pagina])
+
+  const copiar = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(resumo)
+      setCopiado(true)
+      window.setTimeout(() => setCopiado(false), 2000)
+    } catch {
+      /* clipboard indisponível */
+    }
+  }, [resumo])
+
+  const btn =
+    'flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink'
+
+  return (
+    <>
+      <div className="print-hide flex flex-wrap items-center gap-2 rounded-xl border border-line px-3 py-2">
+        <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-mute">
+          Exportar
+        </span>
+        <button type="button" onClick={print} className={btn}>
+          <Printer size={13} />
+          PDF / imprimir
+        </button>
+        {csv && (
+          <button type="button" onClick={baixarCsv} className={btn}>
+            <FileDown size={13} />
+            CSV
+          </button>
+        )}
+        <button type="button" onClick={copiar} className={btn}>
+          <Copy size={13} />
+          {copiado ? 'Copiado ✓' : 'Copiar resumo'}
+        </button>
+      </div>
+      <div className="print-only">
+        <div className="mb-4 flex items-center justify-between gap-4 border-b border-line pb-3">
+          <img src="/brand/logo-cor.svg" alt="Dexterity" style={{ height: 28 }} />
+          <div className="text-right">
+            <div className="font-display text-base font-bold text-ink">
+              vale a pena? · {tituloDoSlug(pagina)}
+            </div>
+            <div className="text-[11px] text-mute">
+              gerado em {new Date().toLocaleDateString('pt-BR')}
+            </div>
+          </div>
+        </div>
+        {premissas && premissas.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-mute">
+              Premissas usadas
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+              {premissas.map(([k, v], i) => (
+                <div key={i} className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-ink-2">{k}</span>
+                  <span className="tnum font-semibold text-ink">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+/* ============================================================
+   Didática — "Entenda o resultado"
+   ============================================================ */
+
+/**
+ * Card educativo posicionado no fim dos resultados (antes de premissas/
+ * fontes): passo a passo numerado + analogia + sensibilidade.
+ */
+export function Didatico({
+  passos,
+  analogia,
+  sensibilidade,
+}: {
+  passos: { t: string; d: ReactNode }[]
+  analogia?: ReactNode
+  sensibilidade?: ReactNode
+}) {
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <GraduationCap size={15} className="text-accent" />
+          Entenda o resultado
+        </span>
+      }
+    >
+      <ol className="space-y-3">
+        {passos.map((p, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-bold tnum text-accent">
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-ink">{p.t}</div>
+              <div className="mt-0.5 text-xs leading-relaxed text-ink-2">{p.d}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {analogia && (
+        <div className="mt-4 rounded-xl bg-surface-2 p-4">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ink">
+            <Lightbulb size={13} className="text-warning" />
+            Em outras palavras…
+          </div>
+          <div className="text-xs leading-relaxed text-ink-2">{analogia}</div>
+        </div>
+      )}
+      {sensibilidade && (
+        <div className="mt-3 rounded-xl border border-line p-4">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ink">
+            <SlidersHorizontal size={13} className="text-accent" />
+            O que mudaria a resposta
+          </div>
+          <div className="text-xs leading-relaxed text-ink-2">{sensibilidade}</div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /** Layout padrão de página de ferramenta: título + descrição + grid inputs/resultados. */
 export function ToolPage({
   icon,
@@ -514,8 +724,10 @@ export function ToolPage({
           </div>
         </div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-        <div className="animate-fadeup-1 space-y-4 lg:sticky lg:top-20 lg:self-start">{inputs}</div>
+      <div className="tool-grid grid gap-6 lg:grid-cols-[340px_1fr]">
+        <div className="print-hide animate-fadeup-1 space-y-4 lg:sticky lg:top-20 lg:self-start">
+          {inputs}
+        </div>
         <div className="animate-fadeup-2 min-w-0 space-y-5">{results}</div>
       </div>
     </div>

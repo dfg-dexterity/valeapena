@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { Briefcase, Car, Home as HomeIcon, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
+import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
 
@@ -11,6 +11,7 @@ const Investimentos = lazy(() => import('./pages/Investimentos'))
 const Risco = lazy(() => import('./pages/Risco'))
 const PjClt = lazy(() => import('./pages/PjClt'))
 const Computador = lazy(() => import('./pages/Computador'))
+const Tempo = lazy(() => import('./pages/Tempo'))
 
 export const TOOLS = [
   {
@@ -62,6 +63,13 @@ export const TOOLS = [
     desc: 'Quanto tempo (e dinheiro) um computador mais rápido devolve — payback do upgrade.',
     icon: Laptop,
   },
+  {
+    path: '/tempo',
+    label: 'Tempo',
+    title: 'Custo de oportunidade do seu tempo',
+    desc: 'Quanto vale sua hora — e quando vale mais investir em você, terceirizar tarefas ou proteger tempo de qualidade.',
+    icon: Hourglass,
+  },
 ] as const
 
 function TopBar() {
@@ -73,7 +81,7 @@ function TopBar() {
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-ink">
             <Scale size={17} strokeWidth={2.4} />
           </span>
-          <span className="text-[15px] font-bold tracking-tight text-ink">
+          <span className="font-display text-[17px] font-bold text-ink">
             vale a pena<span className="text-accent">?</span>
           </span>
         </NavLink>
@@ -107,9 +115,18 @@ function TopBar() {
 }
 
 function Footer() {
+  const { theme } = useTheme()
   return (
     <footer className="border-t border-line py-6">
       <div className="mx-auto max-w-6xl px-4 text-center text-[11px] leading-relaxed text-mute">
+        <div className="mb-3 flex flex-col items-center gap-1.5">
+          <img
+            src={theme === 'dark' ? '/brand/logo-offwhite.svg' : '/brand/logo-cor.svg'}
+            alt="Dexterity"
+            className="h-6"
+          />
+          <p>uma ferramenta Dexterity · vale a pena?</p>
+        </div>
         <p>
           Dados de mercado: Banco Central do Brasil (SGS e Olinda), atualizados ao abrir o app. Regras
           tributárias e de crédito vigentes em 2026.
@@ -139,6 +156,7 @@ export default function App() {
             <Route path="/risco" element={<Risco />} />
             <Route path="/pj-clt" element={<PjClt />} />
             <Route path="/computador" element={<Computador />} />
+            <Route path="/tempo" element={<Tempo />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </Suspense>

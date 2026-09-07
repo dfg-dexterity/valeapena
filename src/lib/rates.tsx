@@ -1,6 +1,6 @@
 /**
  * Taxas de mercado — busca ao vivo no Banco Central (API SGS, CORS liberado)
- * com fallback embutido (valores de ago/2026 capturados na build).
+ * com fallback embutido (valores de set/2026 capturados na build).
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
@@ -23,24 +23,27 @@ export interface MarketRates {
   imobTotal: number
   /** Taxa média aquisição de veículos PF, % a.a. (SGS 20749) */
   veiculos: number
+  /** IGP-M acumulado 12 meses, % (composto a partir da SGS 189 mensal) */
+  igpm12m: number
   /** data de referência aproximada dos dados */
   referencia: string
   /** true quando os valores vieram da API ao vivo */
   aoVivo: boolean
 }
 
-/** Fallback capturado em 27/08/2026 (SGS BCB). */
+/** Fallback capturado em 06/09/2026 (SGS BCB). */
 export const FALLBACK_RATES: MarketRates = {
   selic: 14.0,
   cdi: 13.9,
   ipca12m: 4.44,
-  trMes: 0.1709,
-  poupancaMes: 0.6718,
-  imobMercado: 14.31,
-  imobRegulado: 10.82,
-  imobTotal: 11.22,
-  veiculos: 26.44,
-  referencia: 'ago/2026',
+  trMes: 0.169,
+  poupancaMes: 0.6698,
+  imobMercado: 14.28,
+  imobRegulado: 10.92,
+  imobTotal: 11.3,
+  veiculos: 26.52,
+  igpm12m: 2.18,
+  referencia: 'set/2026',
   aoVivo: false,
 }
 
@@ -71,9 +74,37 @@ async function fetchSgs(serie: string): Promise<number | null> {
   }
 }
 
+/**
+ * IGP-M acumulado 12 m: não há série SGS pronta (com CORS) do acumulado —
+ * busca os últimos 12 valores mensais (SGS 189) e compõe (∏(1+vᵢ/100) − 1)×100.
+ */
+async function fetchIgpm12m(): Promise<number | null> {
+  try {
+    const r = await fetch(
+      'https://api.bcb.gov.br/dados/serie/bcdata.sgs.189/dados/ultimos/12?formato=json',
+      { signal: AbortSignal.timeout(6000) },
+    )
+    if (!r.ok) return null
+    const data = (await r.json()) as Array<{ data: string; valor: string }>
+    if (!Array.isArray(data) || data.length < 12) return null
+    let fator = 1
+    for (const d of data) {
+      const v = parseFloat(d.valor)
+      if (!Number.isFinite(v)) return null
+      fator *= 1 + v / 100
+    }
+    return (fator - 1) * 100
+  } catch {
+    return null
+  }
+}
+
 export async function fetchRates(): Promise<MarketRates> {
   const entries = Object.entries(SGS)
-  const results = await Promise.all(entries.map(([serie]) => fetchSgs(serie)))
+  const [results, igpm] = await Promise.all([
+    Promise.all(entries.map(([serie]) => fetchSgs(serie))),
+    fetchIgpm12m(),
+  ])
   const merged = { ...FALLBACK_RATES }
   let anyLive = false
   results.forEach((v, i) => {
@@ -83,6 +114,10 @@ export async function fetchRates(): Promise<MarketRates> {
       merged[key] = v
     }
   })
+  if (igpm !== null) {
+    anyLive = true
+    merged.igpm12m = igpm
+  }
   const hoje = new Date()
   return {
     ...merged,

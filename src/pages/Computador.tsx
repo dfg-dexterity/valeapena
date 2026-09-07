@@ -9,6 +9,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   InfoTip,
   LiveBadge,
   Segmented,
@@ -93,11 +95,19 @@ export default function Computador() {
     }
 
     // VPL na vida útil (benefícios mensais + revenda do novo no fim, descontados a CDI)
-    let vpBeneficios = 0
-    for (let m = 1; m <= n; m++) vpBeneficios += valorMes / Math.pow(1 + i, m)
+    let fAnuidade = 0 // Σ 1/(1+i)^m — VP de R$ 1/mês durante a vida útil
+    for (let m = 1; m <= n; m++) fAnuidade += 1 / Math.pow(1 + i, m)
+    const vpBeneficios = valorMes * fAnuidade
     const vpRevenda = revendaFinal / Math.pow(1 + i, n)
     const vpl = -custoLiquidoBruto + vpBeneficios + vpRevenda
     const roiPct = custoLiquido > 0 ? (vpl / custoLiquido) * 100 : NaN
+
+    // Minutos/dia que empatam com o CDI (VPL = 0), na jornada e valor de hora atuais
+    const valorMesEquilibrio = Math.max(0, custoLiquidoBruto - vpRevenda) / (fAnuidade || 1)
+    const minutosEquilibrio =
+      valorHora > 0 && diasMes > 0 && fAnuidade > 0
+        ? (valorMesEquilibrio / (valorHora * diasMes)) * 60
+        : NaN
 
     // Custo de adiar 1 mês: benefício perdido − rendimento do capital que ficou investido
     // (com sobra de revenda o sinal inverte: adiar também adia a sobra rendendo CDI)
@@ -142,12 +152,14 @@ export default function Computador() {
       custoLiquido,
       sobraRevenda,
       n,
+      taxaMes: i,
       revendaFinal,
       serie,
       payback,
       vpl,
       roiPct,
       custoEsperaMes,
+      minutosEquilibrio,
       cenarios,
       tabela,
     }
@@ -215,6 +227,68 @@ export default function Computador() {
         tempo, custar menos ou durar mais.
       </>
     )
+
+  /* ------------------------------ Exportação ------------------------------ */
+  const anosTxt = `${vidaAnos} ${vidaAnos === 1 ? 'ano' : 'anos'}`
+  const paybackTxt = Number.isFinite(calc.payback)
+    ? calc.payback === 0
+      ? 'imediato (custo líquido zero)'
+      : meses(calc.payback)
+    : `não se paga em ${anosTxt}`
+
+  const resumo = [
+    'vale a pena? — Computador mais rápido',
+    `Veredito: ${verdictWinner}`,
+    `Payback: ${paybackTxt} · vida útil de ${anosTxt}`,
+    `VPL em ${anosTxt}: ${brl(calc.vpl)} (inclui revenda de ${brl(calc.revendaFinal)} no fim)`,
+    `Tempo economizado: ${num(calc.horasEcoDia * 60)} min/dia útil ≈ ${num(calc.horasEcoMes, 1)} h/mês, valendo ${brl(calc.valorMes)}/mês (hora a ${brlCents(calc.valorHora)})`,
+    `Investimento líquido: ${brl(calc.custoLiquido)} (novo ${brl(custoNovo)} − revenda do atual ${brl(revendaAtual)})`,
+    `Custo de oportunidade: ${pct(custoOportunidade, 2)} a.a. (CDI líquido de IR)`,
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  const r2 = (v: number) => Math.round(v * 100) / 100
+  const csv = {
+    nome: 'ano-a-ano',
+    colunas: [
+      'Ano',
+      'Horas poupadas',
+      'Valor gerado no ano (R$)',
+      'Acumulado a CDI (R$)',
+      'Custo + juros (R$)',
+      'Saldo (R$)',
+    ],
+    linhas: calc.tabela.map(r => [
+      r.ano,
+      r2(r.horas),
+      r2(r.valorAno),
+      r2(r.ganhoAcum),
+      r2(r.custoAcum),
+      r2(r.saldo),
+    ]),
+  }
+
+  const premissas: [string, string][] = [
+    ['Computador novo', brl(custoNovo)],
+    ['Revenda do atual', brl(revendaAtual)],
+    ['Vida útil', anosTxt],
+    [
+      'Valor da hora',
+      modoHora === 'salario'
+        ? `${brlCents(calc.valorHora)} (salário ${brl(salarioMes)} ÷ ${HORAS_MES} h)`
+        : brlCents(calc.valorHora),
+    ],
+    [
+      'Ganho estimado',
+      modoGanho === 'minutos'
+        ? `${num(minutosDia)} min/dia útil`
+        : `+${pct(velocidadePct, 0)} de velocidade em ${pct(pctTempoAfetado, 0)} do tempo`,
+    ],
+    ['Horas trabalhadas/dia', `${num(horasDia, 1)} h`],
+    ['Dias úteis/mês', num(diasMes)],
+    ['Custo de oportunidade', `${pct(custoOportunidade, 2)} a.a.`],
+    ['Revenda do novo no fim', `${pct(revendaNovoPct, 0)} (${brl(calc.revendaFinal)})`],
+  ]
 
   /* ------------------------------ Render ------------------------------ */
   return (
@@ -411,6 +485,8 @@ export default function Computador() {
             }
           />
 
+          <ExportBar pagina="computador" resumo={resumo} csv={csv} premissas={premissas} />
+
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatTile
               label="Payback"
@@ -515,6 +591,144 @@ export default function Computador() {
               qualidade de vida — que valem algo, mas não aparecem no extrato.
             </p>
           </Card>
+
+          <Didatico
+            passos={[
+              {
+                t: 'Seu tempo virou dinheiro',
+                d: (
+                  <>
+                    O computador novo devolve{' '}
+                    <strong>{num(calc.horasEcoDia * 60)} min por dia útil</strong>. Em um mês de{' '}
+                    {num(diasMes)} dias, isso soma {num(calc.horasEcoMes, 1)} h. Como a sua hora
+                    vale {brlCents(calc.valorHora)}, esse tempo vale{' '}
+                    <strong>{brl(calc.valorMes)} por mês</strong>.
+                  </>
+                ),
+              },
+              {
+                t: 'Quanto sai do bolso de verdade',
+                d:
+                  calc.custoLiquido === 0 ? (
+                    <>
+                      O novo custa {brl(custoNovo)}, mas a revenda do atual ({brl(revendaAtual)})
+                      cobre tudo
+                      {calc.sobraRevenda > 0 && <> — e ainda sobram {brl(calc.sobraRevenda)}</>}.
+                      Nada sai do bolso.
+                    </>
+                  ) : (
+                    <>
+                      O novo custa {brl(custoNovo)}, mas você vende o atual por {brl(revendaAtual)}
+                      . Então o investimento de verdade é{' '}
+                      <strong>{brl(calc.custoLiquido)}</strong>.
+                    </>
+                  ),
+              },
+              {
+                t: Number.isFinite(calc.payback)
+                  ? calc.payback === 0
+                    ? 'O upgrade se paga na hora'
+                    : `O computador se paga em ${meses(calc.payback)}`
+                  : 'O computador não se paga na vida útil',
+                d: Number.isFinite(calc.payback) ? (
+                  calc.payback === 0 ? (
+                    <>
+                      Como o custo líquido é zero, cada um dos {brl(calc.valorMes)} mensais já é
+                      lucro desde o primeiro mês.
+                    </>
+                  ) : (
+                    <>
+                      Somando {brl(calc.valorMes)} todo mês (e deixando render), o valor acumulado
+                      alcança o custo de {brl(calc.custoLiquido)} corrigido no{' '}
+                      <strong>mês {num(calc.payback)}</strong> — dali em diante, o upgrade só dá
+                      lucro. Isso {pagaNaVida ? 'cabe' : 'NÃO cabe'} na vida útil de {anosTxt}.
+                    </>
+                  )
+                ) : (
+                  <>
+                    Mesmo somando {brl(calc.valorMes)} por mês, o acumulado não alcança os{' '}
+                    {brl(calc.custoLiquido)} corrigidos dentro de {anosTxt}. Só a revenda no fim
+                    pode salvar a conta — e {calc.vpl > 0 ? 'salva por pouco' : 'nem ela salva'}.
+                  </>
+                ),
+              },
+              {
+                t: 'Por que comparamos com o CDI',
+                d: (
+                  <>
+                    {calc.custoLiquido > 0 ? (
+                      <>
+                        Os {brl(calc.custoLiquido)} não estão parados: se ficassem investidos,
+                        renderiam {pct(custoOportunidade, 2)} ao ano no CDI — cerca de{' '}
+                        {brl(calc.custoLiquido * calc.taxaMes)} já no primeiro mês.{' '}
+                      </>
+                    ) : (
+                      <>
+                        Todo dinheiro tem um uso alternativo: investido, renderia{' '}
+                        {pct(custoOportunidade, 2)} ao ano no CDI.{' '}
+                      </>
+                    )}
+                    Por isso trouxemos tudo para dinheiro de hoje: R$ 100 daqui a {anosTxt} valem
+                    menos que R$ 100 agora, porque dá para saber quanto esses R$ 100 renderiam no
+                    CDI até lá. Feito esse ajuste, sobra o VPL de <strong>{brl(calc.vpl)}</strong>{' '}
+                    — o quanto o upgrade ganha (ou perde) do dinheiro investido.
+                  </>
+                ),
+              },
+              {
+                t: 'A parte honesta do modelo',
+                d: (
+                  <>
+                    Essa conta assume que cada uma das {num(calc.horasEcoMes, 1)} h/mês liberadas
+                    vira trabalho que gera valor — como avisa o balãozinho do campo “Como estimar o
+                    ganho”. Se o tempo virar ócio, o retorno real é conforto e qualidade de vida,
+                    não os {brl(calc.valorMes)}/mês no extrato.
+                  </>
+                ),
+              },
+            ]}
+            analogia={
+              <>
+                É como uma torneira pingando: cada espera do computador lento parece só um pingo de{' '}
+                {num(calc.horasEcoDia * 60)} min por dia. Mas em um ano o balde acumula{' '}
+                {num(calc.horasEcoMes * 12)} h
+                {horasDia > 0 && Math.floor((calc.horasEcoMes * 12) / horasDia) >= 1 && (
+                  <>
+                    {' '}
+                    — pelo menos {num(Math.floor((calc.horasEcoMes * 12) / horasDia))}{' '}
+                    {Math.floor((calc.horasEcoMes * 12) / horasDia) === 1
+                      ? 'dia inteiro'
+                      : 'dias inteiros'}{' '}
+                    de trabalho
+                  </>
+                )}
+                . Fechar a torneira custa {brl(calc.custoLiquido)}; a pergunta é se a água que você
+                para de perder ({brl(calc.valorMes)}/mês) paga o encanador.
+              </>
+            }
+            sensibilidade={
+              <>
+                O número que mais mexe na resposta é o de <strong>minutos por dia</strong>.{' '}
+                {Number.isFinite(calc.minutosEquilibrio) && calc.minutosEquilibrio > 0 ? (
+                  <>
+                    Com essas premissas, o upgrade empata com o CDI a partir de ≈{' '}
+                    <strong>
+                      {num(calc.minutosEquilibrio, calc.minutosEquilibrio < 10 ? 1 : 0)} min/dia
+                    </strong>{' '}
+                    — você estimou {num(calc.horasEcoDia * 60)} min.
+                  </>
+                ) : (
+                  <>
+                    Com o custo coberto pelas revendas (a do atual agora e a do novo no fim),
+                    qualquer minuto ganho já é lucro.
+                  </>
+                )}{' '}
+                Se o ganho real cair pela metade ({num(calc.horasEcoDia * 30)} min/dia), o VPL vai
+                de {brl(calc.vpl)} para {brl(calc.cenarios[0].vpl)}
+                {calc.cenarios[0].vpl < 0 && calc.vpl >= 0 && <> — e o resultado inverte</>}.
+              </>
+            }
+          />
         </>
       }
     />

@@ -1,25 +1,72 @@
 @import 'tailwindcss';
 
 /* ============================================================
+   Fontes da marca Dexterity (self-hosted em /brand/fonts)
+   Boston = texto · Proxima Soft ExCn = títulos/display
+   ============================================================ */
+@font-face {
+  font-family: 'Boston';
+  src: url('/brand/fonts/Boston-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Boston';
+  src: url('/brand/fonts/Boston-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Boston';
+  src: url('/brand/fonts/Boston-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Proxima Soft ExCn';
+  src: url('/brand/fonts/ProximaSoftExCn-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Proxima Soft ExCn';
+  src: url('/brand/fonts/ProximaSoftExCn-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================
    Tokens de tema (dark é o padrão; light via [data-theme="light"])
-   Paleta validada (dataviz) — superfícies, tinta e séries.
+   Paleta Dexterity — Off White #f7f3e7 · Grafite #4d4d4d ·
+   Verde Cerceta #009994 · Roxo Flamingo #98569A ·
+   Amarelo Cromo #FFA436 · Verde Musgo #597C59.
+   Contraste verificado (WCAG): accent-ink/accent 5,81 (dark) e
+   6,11 (light); ink/page 16,30 (dark) e 11,71 (light).
+   Light usa accent #006e6a (accent como TEXTO sobre page/accent-soft
+   ≥ 4,5) e mute #6d6959 (mute ≥ 4,5 até sobre surface-2) — o #00807b
+   e o #8d887a originais falhavam AA nesses pares.
    ============================================================ */
 :root {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --surface-2: #232321;
-  --surface-3: #2c2c2a;
-  --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --mute: #898781;
-  --line: rgba(255, 255, 255, 0.1);
-  --line-strong: rgba(255, 255, 255, 0.18);
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --accent: #3987e5;
-  --accent-ink: #ffffff;
-  --accent-soft: rgba(57, 135, 229, 0.14);
+  --page: #171614;
+  --surface: #211f1c;
+  --surface-2: #2a2824;
+  --surface-3: #34312c;
+  --ink: #f7f3e7;
+  --ink-2: #c9c4b2;
+  --mute: #948f7d;
+  --line: rgba(247, 243, 231, 0.11);
+  --line-strong: rgba(247, 243, 231, 0.19);
+  --grid: #312f2a;
+  --axis: #403d36;
+  --accent: #1cb3ad;
+  --accent-ink: #0c2b29;
+  --accent-soft: rgba(28, 179, 173, 0.15);
   --positive: #0ca30c;
   --positive-soft: rgba(12, 163, 12, 0.14);
   --negative: #e66767;
@@ -30,20 +77,20 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --surface-2: #f3f2ee;
-  --surface-3: #eae9e4;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --mute: #898781;
-  --line: rgba(11, 11, 11, 0.1);
-  --line-strong: rgba(11, 11, 11, 0.18);
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --accent: #2a78d6;
+  --page: #f7f3e7;
+  --surface: #fffdf8;
+  --surface-2: #f0ebdc;
+  --surface-3: #e6e0cd;
+  --ink: #33312c;
+  --ink-2: #5d5a4f;
+  --mute: #6d6959;
+  --line: rgba(77, 77, 77, 0.15);
+  --line-strong: rgba(77, 77, 77, 0.26);
+  --grid: #e4decb;
+  --axis: #c7c0aa;
+  --accent: #006e6a;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(42, 120, 214, 0.1);
+  --accent-soft: rgba(0, 153, 148, 0.12);
   --positive: #006300;
   --positive-soft: rgba(12, 163, 12, 0.12);
   --negative: #d03b3b;
@@ -71,12 +118,21 @@
   --color-negative-soft: var(--negative-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Boston', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Proxima Soft ExCn', 'Boston', sans-serif;
 }
 
 html {
   font-family: var(--font-sans);
   scroll-behavior: smooth;
+}
+
+/* Títulos na fonte display da marca; números seguem em Boston + .tnum */
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
 }
 
 body {
@@ -204,4 +260,74 @@ input[type='number'] {
 /* números tabulares para tabelas e eixos */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Impressão / exportação PDF (depois dos blocos de tema)
+   ============================================================ */
+
+/* cabeçalho de impressão: invisível na tela */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* fundo branco garantido mesmo se imprimir antes do switch de tema:
+     redefine os tokens claros com precedência sobre o dark padrão */
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: light;
+    --page: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f0e4;
+    --surface-3: #e6e0cd;
+    --ink: #33312c;
+    --ink-2: #5d5a4f;
+    --mute: #6d6959;
+    --line: rgba(77, 77, 77, 0.22);
+    --line-strong: rgba(77, 77, 77, 0.34);
+    --grid: #e4decb;
+    --axis: #c7c0aa;
+    --accent: #006e6a;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(0, 153, 148, 0.12);
+    --positive: #006300;
+    --positive-soft: rgba(12, 163, 12, 0.12);
+    --negative: #d03b3b;
+    --negative-soft: rgba(208, 59, 59, 0.1);
+    --warning: #c98500;
+    --warning-soft: rgba(250, 178, 25, 0.16);
+  }
+
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  /* esconde chrome do app, coluna de inputs, barra de exportação e
+     colapsáveis fechados */
+  header,
+  footer,
+  nav,
+  .print-hide,
+  [data-collapse='closed'] {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* resultados em coluna única, largura total */
+  .tool-grid {
+    display: block !important;
+  }
+  .tool-grid > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
 }

@@ -153,3 +153,33 @@ export const MEI_DAS_SERVICOS_2026 = Math.round((SALARIO_MINIMO_2026 * 0.05 + 5)
 export const ENCARGOS_PATRONAIS_PADRAO = 0.358
 export const ENCARGOS_PATRONAIS_SIMPLES = 0.08
 export const FGTS_ALIQUOTA = 0.08
+
+/**
+ * IR sobre ganho de capital na venda de imóvel residencial (pessoa física).
+ * Alíquotas progressivas por faixa de ganho (Lei 8.981/95 art. 21, redação da
+ * Lei 13.259/2016): 15% até R$ 5 mi, 17,5% até 10 mi, 20% até 30 mi, 22,5% acima.
+ * Para imóvel ADQUIRIDO a partir de 2026 só se aplica o fator de redução FR2
+ * (Lei 11.196/2005, art. 40): base = ganho / 1,0035^mesesDePosse.
+ * Isenções (tratar fora, zerando o imposto): único imóvel com venda ≤ R$ 440 mil
+ * (Lei 9.250/95 art. 23) e compra de outro residencial em 180 dias
+ * (Lei 11.196/2005 art. 39 — 1 vez a cada 5 anos).
+ */
+export function irGanhoCapitalImovel(ganho: number, mesesPosse: number): number {
+  if (ganho <= 0) return 0
+  const g = ganho / Math.pow(1.0035, Math.max(0, mesesPosse))
+  const faixas = [
+    { ate: 5_000_000, aliq: 0.15 },
+    { ate: 10_000_000, aliq: 0.175 },
+    { ate: 30_000_000, aliq: 0.2 },
+    { ate: Infinity, aliq: 0.225 },
+  ]
+  let imposto = 0
+  let piso = 0
+  for (const f of faixas) {
+    const nesta = Math.min(g, f.ate) - piso
+    if (nesta > 0) imposto += nesta * f.aliq
+    piso = f.ate
+    if (g <= f.ate) break
+  }
+  return imposto
+}

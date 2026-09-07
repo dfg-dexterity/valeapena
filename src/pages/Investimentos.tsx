@@ -4,6 +4,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   InfoTip,
   LiveBadge,
   SectionTitle,
@@ -384,6 +386,76 @@ export default function Investimentos() {
         ? `${brl(aporteMensal)}/mês`
         : brl(aporteInicial)
 
+  // Derivados para exportação e didática (sempre com os números REAIS do cálculo)
+  const lanterna = calc.ranking[calc.ranking.length - 1]
+  const melhorIsento = calc.ranking.find(p => p.isento) ?? calc.poupanca
+  const melhorTributado = calc.ranking.find(p => !p.isento) ?? vencedor
+  const tributadoVence = melhorTributado.r.liquido >= melhorIsento.r.liquido
+  const fundoDi = calc.produtos.find(p => p.id === 'fundoDi') ?? vencedor
+  const posFundo = calc.ranking.findIndex(p => p.id === 'fundoDi') + 1
+  const diasPrazo = diasDe(calc.n)
+  const equivCurto = lciPct / (1 - 0.225) // ponto de empate LCI×CDB com IR de 22,5% (até 180 dias)
+  const equivLongo = lciPct / (1 - 0.15) // idem com IR de 15% (mais de 720 dias)
+
+  const resumo = [
+    'vale a pena? — Renda fixa na prática',
+    `Aportes: ${fraseAporte} por ${fmtMeses(calc.n)} (${brl(calc.totalInvestido)} investidos no total)`,
+    `1º ${vencedor.nome} (${vencedor.taxaLabel}): ${brl(vencedor.r.liquido)} líquidos · ${pct(vencedor.r.taxaLiquidaAa, 2)} a.a.`,
+    `2º ${segundo.nome} (${segundo.taxaLabel}): ${brl(segundo.r.liquido)} líquidos (${brl(Math.max(0, diffSegundo))} a menos)`,
+    `Melhor isento de IR: ${melhorIsento.nome} — ${brl(melhorIsento.r.liquido)} líquidos`,
+    `Alíquota de IR no prazo: ${pct(calc.aliqPrazo * 100, 1)} · equivalência: LCI/LCA a ${num(lciPct)}% do CDI = CDB a ${pct(calc.lciEquivCdb, 1)} do CDI`,
+    `Vantagem sobre a poupança: ${brl(Math.max(0, vencedor.r.liquido - calc.poupanca.r.liquido))}`,
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  const r2 = (v: number) => Math.round(v * 100) / 100
+  const csvExport = {
+    nome: 'renda-fixa',
+    colunas: [
+      'Posição',
+      'Produto',
+      'Taxa',
+      'Bruto (R$)',
+      'IR (R$)',
+      'Custos (R$)',
+      'Líquido (R$)',
+      'Taxa líquida (% a.a.)',
+      'Garantia',
+    ],
+    linhas: calc.ranking.map((p, i): (string | number)[] => [
+      `${i + 1}º`,
+      p.nome,
+      p.taxaLabel,
+      r2(p.r.bruto),
+      p.isento ? 0 : r2(p.r.ir),
+      r2(p.r.taxas),
+      r2(p.r.liquido),
+      r2(p.r.taxaLiquidaAa),
+      p.garantia,
+    ]),
+  }
+
+  const premissas: [string, string][] = [
+    ['Aporte inicial', brl(aporteInicial)],
+    ['Aporte mensal', brl(aporteMensal)],
+    ['Prazo até o resgate', `${fmtMeses(calc.n)} (${num(diasPrazo)} dias)`],
+    ['Alíquota de IR no prazo', pct(calc.aliqPrazo * 100, 1)],
+    ['CDI', `${pct(cdi, 2)} a.a.`],
+    ['Selic', `${pct(selic, 2)} a.a.`],
+    ['TR', `${pct(tr, 2)} a.m.`],
+    ['IPCA projetado', `${pct(ipca, 2)} a.a.`],
+    ['CDB banco grande', `${num(cdbGrande)}% do CDI`],
+    ['CDB banco médio', `${num(cdbMedio)}% do CDI`],
+    ['CDB banco pequeno', `${num(cdbPequeno)}% do CDI`],
+    ['LCI/LCA', `${num(lciPct)}% do CDI`],
+    ['LC (Letra de Câmbio)', `${num(lcPct)}% do CDI`],
+    ['Tesouro Selic', `Selic + ${pct(selicSpread, 2)}`],
+    ['Tesouro Prefixado', `${pct(prefixado, 1)} a.a.`],
+    ['Tesouro IPCA+', `IPCA + ${pct(ipcaReal, 1)} a.a.`],
+    ['Custódia B3', `${pct(custodiaB3, 2)} a.a.`],
+    ['Fundo DI: taxa de adm.', `${pct(fundoAdm, 2)} a.a.`],
+  ]
+
   return (
     <ToolPage
       icon={<Landmark size={20} />}
@@ -596,6 +668,8 @@ export default function Investimentos() {
             />
           )}
 
+          <ExportBar pagina="investimentos" resumo={resumo} csv={csvExport} premissas={premissas} />
+
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatTile
               label="Melhor resultado líquido"
@@ -759,6 +833,102 @@ export default function Investimentos() {
               })}
             />
           </Card>
+
+          {temAporte && (
+            <Didatico
+              passos={[
+                {
+                  t: 'Fizemos seu dinheiro render nos 10 produtos',
+                  d: (
+                    <>
+                      Pegamos {fraseAporte} e simulamos, mês a mês, por {fmtMeses(calc.n)}. Do seu
+                      bolso saem {brl(calc.totalInvestido)} — o que muda de um produto para outro é
+                      quanto volta no resgate: de {brl(lanterna.r.liquido)} ({lanterna.nome}) até{' '}
+                      {brl(vencedor.r.liquido)} ({vencedor.nome}).
+                    </>
+                  ),
+                },
+                {
+                  t: 'Compare o líquido, não a taxa do anúncio',
+                  d: (
+                    <>
+                      O {melhorTributado.nome} termina com {brl(melhorTributado.r.bruto)} brutos,
+                      paga {brl(melhorTributado.r.ir + melhorTributado.r.taxas)} de IR e custos e
+                      entrega {brl(melhorTributado.r.liquido)}. Já {melhorIsento.nome} não paga IR
+                      nenhum e entrega {brl(melhorIsento.r.liquido)}.{' '}
+                      {tributadoVence ? (
+                        <>
+                          Ou seja: aqui o tributado vence mesmo pagando imposto — isento nem sempre
+                          ganha. A régua é a equivalência que a página calcula: no seu prazo, uma
+                          LCI/LCA a {num(lciPct)}% do CDI só empata com um CDB a{' '}
+                          {pct(calc.lciEquivCdb, 1)} do CDI, e o {melhorTributado.nome} paga mais
+                          que isso.
+                        </>
+                      ) : (
+                        <>
+                          Aqui a isenção venceu — mas só porque nenhum tributado paga{' '}
+                          {pct(calc.lciEquivCdb, 1)} do CDI, o ponto de empate com a LCI/LCA a{' '}
+                          {num(lciPct)}% no seu prazo.
+                        </>
+                      )}
+                    </>
+                  ),
+                },
+                {
+                  t: 'O IR anda numa escada que desce',
+                  d: (
+                    <>
+                      A alíquota de IR cai em degraus: 22,5% até 180 dias, 20% até 360, 17,5% até
+                      720 e 15% depois disso. Seu prazo de {fmtMeses(calc.n)} dá {num(diasPrazo)}{' '}
+                      dias — degrau de {pct(calc.aliqPrazo * 100, 1)}. E cada aporte mensal conta o
+                      próprio prazo: os aportes mais recentes, mais "novos", ainda pagam alíquotas
+                      maiores no dia do resgate.
+                    </>
+                  ),
+                },
+                {
+                  t: 'Come-cotas em uma frase',
+                  d: (
+                    <>
+                      No Fundo DI, a cada 6 meses a Receita antecipa 15% de IR sobre o rendimento
+                      (o "come-cotas") — esse dinheiro sai antes da hora e para de render juros
+                      sobre juros, parte do motivo de o fundo ficar em {posFundo}º, com{' '}
+                      {brl(fundoDi.r.liquido)}.
+                    </>
+                  ),
+                },
+              ]}
+              analogia={
+                <>
+                  Escolher investimento pela taxa bruta é como escolher emprego pelo salário bruto.
+                  Aqui, o "emprego com desconto em folha" ({melhorTributado.nome}:{' '}
+                  {brl(melhorTributado.r.bruto)} menos{' '}
+                  {brl(melhorTributado.r.ir + melhorTributado.r.taxas)} de descontos) deposita{' '}
+                  {brl(melhorTributado.r.liquido)} na conta; o "emprego sem desconto" (
+                  {melhorIsento.nome}) deposita {brl(melhorIsento.r.liquido)}. Quem paga mais no
+                  contracheque é o {tributadoVence ? melhorTributado.nome : melhorIsento.nome} — e
+                  é só isso que importa.
+                </>
+              }
+              sensibilidade={
+                <>
+                  O prazo muda o ranking porque muda o IR: resgatando em até 180 dias, a mesma
+                  LCI/LCA a {num(lciPct)}% do CDI equivale a um CDB a {pct(equivCurto, 1)} do CDI;
+                  passando de 720 dias, a só {pct(equivLongo, 1)}. Hoje, com {fmtMeses(calc.n)}, o
+                  empate fica em {pct(calc.lciEquivCdb, 1)} — e o CDB de banco pequeno paga{' '}
+                  {num(cdbPequeno)}% do CDI, {cdbPequeno >= calc.lciEquivCdb ? 'acima' : 'abaixo'}{' '}
+                  dessa linha.
+                  {cdbPequeno >= calc.lciEquivCdb && cdbPequeno < equivCurto && (
+                    <>
+                      {' '}
+                      Encurte o prazo para menos de 6 meses e o empate sobe para{' '}
+                      {pct(equivCurto, 1)}: a resposta inverte a favor da isenção.
+                    </>
+                  )}
+                </>
+              }
+            />
+          )}
 
           <Card title="Premissas e letras miúdas">
             <ul className="list-disc space-y-2 pl-4 text-xs leading-relaxed text-ink-2">

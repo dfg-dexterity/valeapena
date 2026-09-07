@@ -9,6 +9,8 @@ import {
   Card,
   Collapse,
   DataTable,
+  Didatico,
+  ExportBar,
   InfoTip,
   LiveBadge,
   Segmented,
@@ -339,6 +341,79 @@ export default function Carro() {
 
   const pctRevenda = sim.precoCompra > 0 ? (sim.revenda / sim.precoCompra) * 100 : 0
 
+  /* --------------------------- exportação (R3.2) --------------------------- */
+  const categoriaNome = CATEGORIAS_CARRO.find(c => c.id === categoriaId)?.nome ?? categoriaId
+
+  const resumo = [
+    'vale a pena? — Carro: alugar × comprar',
+    verdictWinner,
+    `Horizonte de ${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'} · ${categoriaNome} de ${brl(valorCarro)}${
+      idadeCompra > 0 ? ` (seminovo de ${idadeCompra} ${idadeCompra === 1 ? 'ano' : 'anos'}: ${brl(sim.precoCompra)})` : ''
+    } · ${num(kmMes)} km/mês`,
+    `Comprar ${sim.financiado ? 'financiado' : 'à vista'}: ${brl(sim.custoBuy)} em valor presente (revenda de ${brl(sim.revenda)} já abatida)`,
+    `Assinatura 0 km: ${brl(sim.custoSub)} em valor presente (${brl(assinaturaMes)}/mês)`,
+    `Custo por km: comprar ${brlCents(sim.custoKmBuy)} · assinar ${brlCents(sim.custoKmSub)}`,
+    `Taxa de desconto: ${pct(sim.descontoAa, 1)} a.a. (custo de oportunidade de ${pct(custoOp, 1)} líquido de 15% de IR)`,
+    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+  ].join('\n')
+
+  const csv = {
+    nome: 'ano-a-ano',
+    colunas: [
+      'Ano',
+      'Valor do carro (R$)',
+      'Gasto no ano — comprar (R$)',
+      'Gasto no ano — assinatura (R$)',
+      'VP acumulado — comprar (R$)',
+      'VP acumulado — assinatura (R$)',
+    ],
+    linhas: sim.tabela.map(r => [
+      r.ano,
+      Math.round(r.valorFim),
+      Math.round(r.gastoBuy),
+      Math.round(r.gastoSub),
+      Math.round(r.vpBuy),
+      Math.round(r.vpSub),
+    ]),
+  }
+
+  const premissas: [string, string][] = [
+    ['Categoria', categoriaNome],
+    ['Valor do carro (0 km)', brl(valorCarro)],
+    [
+      'Idade na compra',
+      idadeCompra === 0
+        ? '0 km'
+        : `${idadeCompra} ${idadeCompra === 1 ? 'ano' : 'anos'} (${brl(sim.precoCompra)})`,
+    ],
+    ['Uso', `${num(kmMes)} km/mês`],
+    ['Horizonte', `${sim.anos} ${sim.anos === 1 ? 'ano' : 'anos'}`],
+    ['Estado (IPVA)', `${uf} · ${pct(estadoSel.aliquota * 100, 1)} a.a.`],
+    [
+      'Forma de compra',
+      sim.financiado
+        ? `Financiado — ${pct(entradaPct, 0)} de entrada, ${num(prazoFin)}×, ${pct(taxaFin, 1)} a.a.`
+        : 'À vista',
+    ],
+    ['Assinatura 0 km', `${brl(assinaturaMes)}/mês`],
+    ['Dias sem carro/ano', diasSemCarroAno === 0 ? 'nenhum' : `${num(diasSemCarroAno)} dias`],
+    ['Cashback do cartão', pct(cashbackPct, 2)],
+    ['Custo de oportunidade', `${pct(custoOp, 1)} a.a. (${pct(sim.descontoAa, 1)} líq. de IR)`],
+    ['Seguro', `${pct(seguroPctAno, 1)}/ano`],
+    ['Manutenção', `${brl(manutencaoAno)}/ano`],
+    ['Depreciação', `${pct(depAno1Pct, 0)} no 1º ano · ${pct(depSegPct, 0)} a.a. depois`],
+    ['Licenciamento', `${brl(licenciamento)}/ano`],
+  ]
+
+  /* ---------------------------- didática (R3.3) ---------------------------- */
+  // depreciação no 1º ano DA POSSE (para seminovo, a perda já é a da idade atual)
+  const depAno1Posse = Math.max(0, sim.precoCompra - (sim.tabela[0]?.valorFim ?? sim.precoCompra))
+  const mesesAssinaturaEquiv = assinaturaMes > 0 ? depAno1Posse / assinaturaMes : 0
+  const outrosVP = sim.pvSeguro + sim.pvManut + sim.pvIpva
+  // quanto 30 dias/ano a mais sem carro tirariam do custo da assinatura (VP)
+  const fracSemCarro = Math.min(Math.max(diasSemCarroAno, 0), 365) / 365
+  const economia30d = fracSemCarro < 1 ? (sim.custoSub / (1 - fracSemCarro)) * (30 / 365) : 0
+
   /* -------------------------------- página ------------------------------- */
   return (
     <ToolPage
@@ -589,6 +664,8 @@ export default function Carro() {
             badge={verdictBadge}
           />
 
+          <ExportBar pagina="carro" resumo={resumo} csv={csv} premissas={premissas} />
+
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatTile
               label={sim.financiado ? 'Comprar financiado — VP' : 'Comprar à vista — VP'}
@@ -708,6 +785,89 @@ export default function Carro() {
               no 1º ano; a revenda aparece apenas nas colunas de VP. Verde = opção mais barata até ali.
             </p>
           </Card>
+
+          <Didatico
+            passos={[
+              {
+                t: 'Trouxemos tudo para dinheiro de hoje (VPL)',
+                d: (
+                  <>
+                    Somamos cada gasto dos próximos {sim.anos} {sim.anos === 1 ? 'ano' : 'anos'} e
+                    trouxemos tudo para dinheiro de hoje, porque R$ 100 daqui a {sim.anos}{' '}
+                    {sim.anos === 1 ? 'ano' : 'anos'} valem menos que R$ 100 agora — dá para saber
+                    quanto seus R$ 100 renderiam no CDI. Usamos {pct(sim.descontoAa, 1)} ao ano (seu
+                    custo de oportunidade de {pct(custoOp, 1)}, já tirando 15% de imposto). Só assim
+                    comprar ({brl(sim.custoBuy)}) e assinar ({brl(sim.custoSub)}) podem ser comparados
+                    de igual para igual.
+                  </>
+                ),
+              },
+              {
+                t: 'A depreciação é o maior custo invisível do carro próprio',
+                d: (
+                  <>
+                    Ninguém manda boleto de "depreciação", mas ela existe: seu carro sai de{' '}
+                    {brl(sim.precoCompra)} e vai valendo menos a cada ano. Em dinheiro de hoje, essa
+                    perda soma {brl(Math.max(0, sim.depVP))}
+                    {sim.depVP > outrosVP
+                      ? <> — mais do que seguro ({brl(sim.pvSeguro)}), manutenção ({brl(sim.pvManut)}) e
+                        IPVA ({brl(sim.pvIpva)}) somados.</>
+                      : <>, contra {brl(outrosVP)} de seguro, manutenção e IPVA juntos.</>}
+                    {sim.financiado && sim.jurosVP > 0 && (
+                      <> Os juros do financiamento adicionam mais {brl(sim.jurosVP)}.</>
+                    )}
+                  </>
+                ),
+              },
+              {
+                t: 'A revenda volta como crédito',
+                d: (
+                  <>
+                    No fim de {sim.anos} {sim.anos === 1 ? 'ano' : 'anos'} você ainda tem um carro que
+                    vale {brl(sim.revenda)} — dá para vender e recuperar esse dinheiro. Por isso ele
+                    entra como um "dinheiro de volta" na conta de quem compra
+                    {sim.saldoN > 0 && (
+                      <>, já descontando o saldo devedor de {brl(sim.saldoN)} que ainda falta pagar ao banco</>
+                    )}
+                    . Sem esse crédito, comprar pareceria bem mais caro do que é de verdade.
+                  </>
+                ),
+              },
+              {
+                t: 'O resultado final',
+                d: (
+                  <>
+                    Feitas as contas, a diferença entre as duas opções é de {brl(Math.abs(sim.diff))}{' '}
+                    no período — o mesmo que {brlCents(sim.eqMes)} por mês no seu bolso
+                    {empate
+                      ? ', menos de 2% do custo total: empate técnico, decida pela conveniência.'
+                      : buyWins
+                        ? ', a favor de comprar.'
+                        : ', a favor de assinar.'}{' '}
+                    Por km rodado: comprar custa {brlCents(sim.custoKmBuy)} e assinar{' '}
+                    {brlCents(sim.custoKmSub)}.
+                  </>
+                ),
+              },
+            ]}
+            analogia={
+              <>
+                Carro 0 km é como celular novo: perde valor assim que sai da caixa. No seu caso, o
+                carro de {brl(sim.precoCompra)} perde {brl(depAno1Posse)} só no 1º ano com você — o
+                equivalente a {num(mesesAssinaturaEquiv, 1)} meses de assinatura ({brl(assinaturaMes)}
+                /mês) que evaporam sem você rodar um km a mais por causa disso.
+              </>
+            }
+            sensibilidade={
+              <>
+                Hoje você contou {diasSemCarroAno === 0 ? 'nenhum dia' : `${num(diasSemCarroAno)} dias`}{' '}
+                sem carro por ano — cada 30 dias a mais (férias, home office) tirariam cerca de{' '}
+                {brl(economia30d)} do custo da assinatura, o que pode inverter o resultado. O horizonte
+                também pesa: períodos curtos favorecem a assinatura (a depreciação forte do início fica
+                toda com quem compra) e períodos longos favorecem a compra, que dilui essa perda.
+              </>
+            }
+          />
 
           <Card title="Premissas e fontes" subtitle="Tudo é editável nos controles ao lado">
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-2">
