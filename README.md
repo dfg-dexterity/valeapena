@@ -16,6 +16,7 @@ Cada página tem **exportação** (PDF/impressão, CSV e resumo copiável) e uma
 | 💼 **PJ × CLT** | Líquido real dos dois lados com as tabelas de 2026 (INSS, IRRF com isenção até R$ 5 mil, Simples Nacional com Fator R e tabelas dos Anexos III/V, MEI com DAS fixo e teto), benefícios, férias, FGTS — e os custos de deslocamento e home office por modalidade. |
 | 💻 **Upgrade de computador** | Um computador mais rápido se paga? Payback, VPL e quanto custa cada mês de espera. |
 | ⏳ **Custo de oportunidade do seu tempo** | Quanto sua hora vale de verdade (método *Your Money or Your Life*) — e quando vale mais investir em skills (retornos da literatura econômica, com rampa realista), terceirizar tarefas (Whillans, PNAS 2017) ou proteger tempo de qualidade (que aqui nunca vira dinheiro — de propósito). |
+| 🧭 **Emprego: qual escolher?** | Compare até 4 propostas de trabalho com os critérios que importam para você (5 áreas, 32 critérios — pesos e importância editáveis, salvos no navegador). Financeiro e deslocamento podem virar nota a partir de números reais; o resultado mostra onde o líder perde e que mudança de peso inverteria a decisão. |
 
 ## Dados
 

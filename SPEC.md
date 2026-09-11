@@ -232,6 +232,52 @@ Cada página (Carro, Imovel, Morar, Investimentos, Risco, PjClt, Computador, Tem
 2. `<Didatico>` no fim dos resultados (antes de premissas/fontes): 3–5 passos com os números REAIS calculados, 1 analogia, 1 sensibilidade. Conteúdo específico por página (ex.: Carro explica depreciação+VPL; Investimentos explica IR regressivo e por que isento ≠ melhor; Risco explica p10/p90 e "risco não é ruim, é preço"; PjClt explica Fator R e o custo invisível do deslocamento; Computador explica payback).
 3. Não alterar a matemática existente das 6 páginas antigas (exceto Morar, R3.5).
 
+## Rodada 4 — Emprego.tsx: qual proposta escolher? (página NOVA)
+
+Rota `/emprego` (TOOLS/route já registrados em App.tsx, ícone `Compass`). Dados em `src/lib/carreira.ts` (LEIA: `AREAS_CARREIRA` 5 áreas c/ `pesoPct` somando 100, `CRITERIOS_CARREIRA` 32 critérios c/ `importancia` default = perfil da planilha do usuário, `pergunta`-guia e `objetivo?` p/ 4 critérios pontuáveis por números reais; `IMPORTANCIA_LABELS`, `NOTA_LABELS`, `OPCOES_PADRAO`). Origem: planilha "Career Choice Worksheet" do usuário — ela só media *o que importa* (importância × peso); esta página REESTRUTURA em 3 etapas mais intuitivas: **1) seu perfil → 2) pontue cada proposta → 3) ranking com sensibilidade**.
+
+**Layout** (ToolPage): coluna de inputs = Etapa 1; coluna principal = Verdict → ExportBar → Etapa 2 (propostas + matriz) → Etapa 3 (resultados) → Didatico → premissas. Cabeçalhos numerados “1 · Seu perfil”, “2 · Suas propostas”, “3 · Resultado” (círculo com número em `accent-soft`) para guiar.
+
+**Etapa 1 — Seu perfil (inputs, sticky):**
+- Card “Peso de cada área”: 5 SliderFields 0–50% step 5 (defaults 20/25/10/20/25). Linha “Soma: X%” — se ≠ 100, Aviso âmbar “os pesos são normalizados para 100%” (a conta SEMPRE normaliza por ΣW; se ΣW = 0 → pesos iguais + aviso).
+- 5 `Collapse` (um por área, fechado por padrão, título com a área e “n critérios”): para cada critério um seletor compacto de importância 1–5 (Segmented pequeno ou 5 botões-pílula com o número; tooltip mostra `IMPORTANCIA_LABELS`). Defaults = `importancia` de carreira.ts, com nota “pré-preenchido com o perfil da sua planilha”.
+- Botão “Recomeçar” (ícone `RotateCcw`) que volta perfil e propostas aos defaults.
+- **Persistência**: tudo (pesos, importâncias, propostas com notas e números) em `localStorage` chave `valeapena-emprego-v1`, com try/catch e carga no primeiro render (lazy initializer); qualquer mudança salva (debounce não é necessário). Nada vai para servidor.
+
+**Etapa 2 — Suas propostas (coluna principal):**
+- Card “2 · Suas propostas”: lista de 1–4 opções (default `OPCOES_PADRAO`); cada uma com nome editável (input texto, máx. 24 chars), botão remover (mín. 1) e “+ Adicionar proposta” (máx. 4). Toggle da página “Pontuar Financeiro e deslocamento pelos números reais” (default OFF). Quando ON, cada opção mostra 4 NumberFields: salário líquido/mês (R$), benefícios/mês (R$), bônus e incentivos/ano (R$), deslocamento ida+volta (min/dia).
+- Card “Pontue cada critério de 1 a 5”: matriz critérios × opções, agrupada por área (cabeçalho da área com peso e um botão para recolher o grupo); coluna 1 = nome do critério + pergunta-guia em `text-mute` (InfoTip com `pergunta`); uma coluna por opção com seletor 1–5 (5 botões-pílula compactos; selecionado em `accent`; tooltip `NOTA_LABELS`). Default de toda nota = 3 (“Ok”). Contador “X de Y notas ainda no padrão (3)” acima da matriz. Container com `overflow-x-auto` e 1ª coluna `sticky left-0` (mobile). Para os 4 critérios com `objetivo`, quando o toggle de números está ON: a célula vira read-only mostrando a nota automática + badge “auto” (fórmula abaixo); OFF: manual.
+- **Nota automática** (por critério objetivo, entre as opções que têm o número preenchido): `x = 1 + 4 × (v − min)/(max − min)`; se max = min (ou só 1 opção) → 3; `commute` é INVERTIDO (menor tempo = 5). Opção sem o número preenchido → mantém a nota manual. InfoTips: deslocamento cita Stutzer & Frey 2008 (+1h/trajeto ≈ −0,28 pt de satisfação; salário maior normalmente não compensa) e salário cita a leitura log-linear (Killingsworth 2021: bem-estar sobe com o % de aumento, não com o valor absoluto) — mesmas fontes já usadas em Tempo.tsx.
+
+**Matemática (matriz de decisão ponderada, tudo em `useMemo`):**
+```
+Wn_a      = W_a / ΣW                                   (pesos normalizados; ΣW=0 → 1/5 cada)
+areaScore_{o,a} = Σ_{s∈a} w_s·x_{o,s} / (5·Σ_{s∈a} w_s)  ∈ [0,2 ; 1]   (w = importância 1–5, x = nota 1–5)
+total_o   = 100 · Σ_a Wn_a · areaScore_{o,a}            ∈ [20 ; 100]
+pesoEfetivo_s = Wn_a · w_s / Σ_{s∈a} w_s                (quanto cada critério pesa no total; Σ_s = 1)
+contrib_{o,s} = 100 · pesoEfetivo_s · x_{o,s}/5         (Σ_s contrib = total_o — identidade obrigatória)
+```
+- Ranking por `total` (desc). Líder L e vice R.
+- **Sensibilidade por área**: para cada área a, varrer W_a' de 0 a 100 (passo 1) mantendo as OUTRAS áreas proporcionais entre si (renormalizar) e achar o menor |W_a' − W_a| em que R ≥ L. Reportar o flip mais próximo (“se *Financeiro* pesasse 12% (hoje 25%), *Proposta A* passaria à frente”) ou “nenhum ajuste de peso de UMA área sozinha inverte o resultado”. Verificar re-calculando totais no ponto reportado.
+- **Onde o líder perde**: critérios com `contrib_{R,s} − contrib_{L,s} > 0`, ordenados pela diferença — top 5 com a diferença em pontos.
+- **Área decisiva**: a área com maior `Wn_a·(areaScore_L − areaScore_R)·100`.
+- Margem: `total_L − total_R` (pts de 100).
+
+**Etapa 3 — Resultado (coluna principal):**
+- `Verdict`: com ≥2 opções e margem ≥ 0,5 pt → “**{L}** é a melhor escolha para o seu perfil: {total_L} de 100, {margem} pts à frente de {R}” (tone positive; badge “+{margem} pts”); margem < 0,5 → “Empate técnico entre {L} e {R}” (neutral) + dica para pontuar os critérios que ainda estão no padrão; 1 opção só → neutral “Adicione uma proposta para comparar”. Se `notasPadrao ≥ 50%` das células, badge âmbar “resultado preliminar”.
+- ExportBar (`pagina: 'emprego'`; csv = matriz completa: critério, área, importância, peso efetivo %, nota e contribuição de cada opção + linha TOTAL; resumo = ranking com totais + área decisiva + flip; premissas = pesos das áreas, nº de propostas, toggle números, nº de notas no padrão).
+- StatTiles (grid 2×2): total do líder, margem sobre o vice, área decisiva (com a diferença em pts), critérios ainda no padrão.
+- Gráfico 1 “Ranking” — `VBarChart` 1 série (total 0–100), `colorByValue` destacando o líder em `accent` e os demais em `mute`/série neutra; rótulo = nome da opção.
+- Gráfico 2 “Por área” — `VBarChart stacked={false}` x = área (nome curto), séries = opções (colorIndex 0..3, ordem das opções), y = areaScore×100 (“% do máximo”).
+- Gráfico 3 “O que mais pesa para você” — top 10 `pesoEfetivo_s` em %, 1 cor (accent); sub: “importância × peso da área”.
+- Card “Onde {L} perde” — DataTable dos até 5 critérios em que R supera L (critério, área, nota L, nota R, diferença em pts). Se vazio: “{L} vence ou empata em todos os critérios”.
+- Card “E se…” — a frase da sensibilidade por área + “diferença de {margem} pts equivale a {margem / (100·pesoEfetivo_max/5)} nota(s) no seu critério mais importante ({nome})” (arredondar 1 casa).
+- Card “Detalhamento” — DataTable da matriz (critério, área, importância, peso efetivo %, nota por opção) — pode ser o mesmo dataset do CSV.
+- `Didatico`: (1) “cada critério vale pontos = importância × peso da área” citando o critério de maior peso efetivo com o % real; (2) “cada proposta recebe nota 1–5; multiplicamos pelo peso e somamos: {L} fez {total_L} de 100” ; (3) “o ranking reflete as SUAS prioridades de hoje — se mudar a importância, o resultado muda” (+ se toggle ON: “salário, benefícios, bônus e deslocamento viraram nota sozinhos: o maior = 5, o menor = 1”); analogia: boletim escolar em que as matérias têm pesos diferentes (ou júri com votos de pesos diferentes); sensibilidade = a frase do flip.
+- Card “Método e fontes”: matriz de decisão ponderada (SMART — Edwards 1977; “weighted scoring”), estrutura de 5 áreas/32 critérios da Career Choice Worksheet; Stutzer & Frey 2008; Killingsworth 2021 — e a honestidade: “a nota mede aderência ao seu perfil, não ‘qualidade’ da empresa”.
+
+**Guards/UX**: sem NaN (ΣW=0, Σw=0 numa área → areaScore = 0,6 (nota 3) com aviso, 1 opção); nomes vazios → “Proposta N”; max 4 opções; mobile empilha e a matriz rola dentro do card; tudo pt-BR; sem novas dependências; `npx tsc --noEmit` limpo.
+
 ## Qualidade
 
 - `npx tsc --noEmit` limpo (strict, noUnusedLocals). Rodar antes de terminar.

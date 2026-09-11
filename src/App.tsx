@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp } from 'lucide-react'
+import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp, Compass } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
 
@@ -12,6 +12,7 @@ const Risco = lazy(() => import('./pages/Risco'))
 const PjClt = lazy(() => import('./pages/PjClt'))
 const Computador = lazy(() => import('./pages/Computador'))
 const Tempo = lazy(() => import('./pages/Tempo'))
+const Emprego = lazy(() => import('./pages/Emprego'))
 
 export const TOOLS = [
   {
@@ -69,6 +70,13 @@ export const TOOLS = [
     title: 'Custo de oportunidade do seu tempo',
     desc: 'Quanto vale sua hora — e quando vale mais investir em você, terceirizar tarefas ou proteger tempo de qualidade.',
     icon: Hourglass,
+  },
+  {
+    path: '/emprego',
+    label: 'Emprego',
+    title: 'Emprego: qual escolher?',
+    desc: 'Compare propostas de trabalho com os critérios que importam para você — pesos, notas, números reais e o que faria a decisão virar.',
+    icon: Compass,
   },
 ] as const
 
@@ -157,6 +165,7 @@ export default function App() {
             <Route path="/pj-clt" element={<PjClt />} />
             <Route path="/computador" element={<Computador />} />
             <Route path="/tempo" element={<Tempo />} />
+            <Route path="/emprego" element={<Emprego />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </Suspense>
