@@ -329,6 +329,36 @@ custo_o      = PV(t0 + Σ saídas) − PV(venda_o(N))
 
 **Guards/UX:** sem NaN em extremos (km 300, horizonte 3, tarifa 0,50, fração casa 0/100, financiado 60 m > horizonte 36 m → saldo na venda); PHEV some do gráfico/tiles/tabela quando desligado; cenário “rua” trava fracCasa = 0 e fracEl (PHEV) = 0 com nota; tudo pt-BR; sem dependências novas; `npx tsc --noEmit` limpo; mobile empilha.
 
+## Rodada 6 — Parcelar.tsx: parcelar ou à vista? (página NOVA)
+
+Rota `/parcelar` (TOOLS/route em `App.tsx`, ícone `CreditCard`, posicionada entre `Investimentos` e `Risco`). Sem dados novos: usa `useRates()` (CDI) e `finance.ts` (`aToM`, `mToA`, `irRegressivo`). Nenhuma dependência nova.
+
+**Pergunta:** a loja oferece **X% de desconto à vista** ou **N parcelas sem juros** — qual ponta deixa mais dinheiro com você? É a decisão de dia a dia do app (IPVA, IPTU, seguro, anuidade, eletrônico), complementar às decisões grandes das outras páginas.
+
+**Inputs (coluna esquerda):**
+- Card “A compra”: atalhos (chips) com situações típicas — Eletrônico, IPVA, IPTU, Seguro, Anuidade — que preenchem total/parcelas/desconto/primeira parcela (apenas pontos de partida, com nota); preço parcelado total (100–60.000, step 50); número de parcelas (2–24, o `format` mostra `Nx de R$ …`); primeira parcela `Segmented` **Em 30 dias** (cartão, default) × **No ato** (carnê/IPVA).
+- Card “O preço à vista”: `Segmented` **Desconto %** (0–30, step 0,5) × **Preço fechado** (slider até 1,2 × total, para quando a loja dá o valor do Pix); linha de apoio com o preço à vista, o desconto efetivo e a economia nominal.
+- Card “Onde o dinheiro fica esperando”: % do CDI (50–130, default 100), `Toggle` isenta de IR (LCI/LCA), linha com o rendimento líquido e `LiveBadge`.
+- `Collapse` “Premissas avançadas”: CDI editável (default `rates.cdi`) e a nota honesta de que a conta pressupõe ter o dinheiro hoje — sem ele, parcelar não é escolha e o número que importa é a taxa embutida.
+
+**Modelo:**
+```
+n, parcela = total/n, defas = (primeira === 'ato' ? 0 : 1)
+iBruta   = aToM(cdi × pctCdi/100)
+prazoMed = (n−1)/2 + defas            → dias = prazoMed×365/12
+i        = iBruta × (1 − irRegressivo(dias))        (isento → sem IR)
+vpEm(j)  = Σ_{k=0..n−1} parcela / (1+j)^(k+defas)
+vpParc   = vpEm(i)
+economiaAVista = vpParc − aVista            > 0 → à vista ganha
+descEquilibrio = (1 − vpParc/total) × 100   ponto de virada, em % do total
+taxaEmbutida   = j tal que vpEm(j) = aVista (bissecção em [−0,9; 3], 100 iterações)
+```
+Caminhos de riqueza com a mesma carteira (`caixa0 = max(total, aVista)`): à vista → `(caixa0 − aVista)(1+i)^m`; parcelando → saldo rende `i` ao mês e paga uma parcela nos meses `defas … defas+n−1`. A diferença no fim é `−economiaAVista × (1+i)^H` — consistência garantida.
+
+**Saídas (coluna direita):** `Verdict` (à vista × parcelar × empate técnico quando |Δ| < 0,2% do total, badge com o desconto de equilíbrio) · `ExportBar` (pagina `parcelar`, CSV mês a mês) · 4 `StatTile` (diferença hoje, desconto de equilíbrio, taxa embutida a.m./a.a., sobra no fim) · `VLineChart` dos dois saldos (slot 0 parcelando, slot 1 à vista) · `VLineChart` da vantagem de parcelar × desconto de 0 a 25% com `refY={0}` (cruzamento = equilíbrio) · `DataTable` mês a mês (parcela, rendimento, os dois saldos, diferença) · `Didatico` (5 passos: comparabilidade no tempo, rendimento líquido, o desconto de equilíbrio, “sem juros” tem juro embutido, e a parte honesta — limite do cartão e rotativo) · Card “Onde essa conta aparece no seu dia a dia”.
+
+**Guards/UX:** n ≥ 2; `aVista` nunca negativo; taxa embutida = `NaN` fora do intervalo de bissecção, com texto alternativo (“parcelamento sem juros”) em todos os lugares onde aparece; sem NaN nos extremos (desconto 0, desconto 30, 24 parcelas, CDI 0); `npx tsc --noEmit` limpo; mobile empilha.
+
 ## Qualidade
 
 - `npx tsc --noEmit` limpo (strict, noUnusedLocals). Rodar antes de terminar.

@@ -1,6 +1,6 @@
 # ⚖️ vale a pena?
 
-Calculadoras para decisões financeiras no Brasil — compare as duas pontas de cada escolha com números de verdade: **taxas ao vivo do Banco Central**, **impostos de 2026** e **custo de oportunidade**. Uma ferramenta **Dexterity**.
+Calculadoras para as suas decisões de dinheiro no Brasil — das grandes (casa, carro, carreira) às do dia a dia (parcelar ou pagar à vista). Compare as duas pontas de cada escolha com números de verdade: **taxas ao vivo do Banco Central**, **impostos de 2026** e **custo de oportunidade**. Uma ferramenta **Dexterity**.
 
 Cada página tem **exportação** (PDF/impressão, CSV e resumo copiável) e uma seção **"Entenda o resultado"** que explica a conta passo a passo, em linguagem simples, com os seus números.
 
@@ -12,6 +12,7 @@ Cada página tem **exportação** (PDF/impressão, CSV e resumo copiável) e uma
 | 🏠 **Financiamento imobiliário** | Simulador SBPE completo: SAC × Price, taxas atuais dos bancos, TR, seguros MIP/DFI, CET, custos de cartório/ITBI, renda mínima e regras do novo modelo de crédito (teto SFH R$ 2,25 mi). |
 | 🔑 **Morar: alugar × comprar** | Continuar no aluguel ou comprar o imóvel? Valorização média (FipeZap), reajuste por IGP-M/IPCA ao vivo, ITBI por capital, cartório pelas tabelas reais, IR sobre o ganho de capital na venda (com isenções), FGTS como capital parado, custos do dono × do inquilino — com break-even e aluguel de equilíbrio. |
 | 🏦 **Renda fixa na prática** | CDB (grande/médio/pequeno), LCI/LCA, LC, Tesouro Selic/Prefixado/IPCA+ e fundos — todos **líquidos** de IR regressivo, custódia e come-cotas, lado a lado. |
+| 💳 **Parcelar ou à vista?** | A conta do dia a dia: o desconto à vista paga o que o dinheiro renderia até a última parcela? Compara as duas pontas em valor presente, mostra o **desconto de equilíbrio** (a partir de quanto vale pagar à vista), a **taxa embutida** no parcelamento “sem juros” e o mês a mês dos dois caminhos. Atalhos para IPVA, IPTU, seguro, anuidade e eletrônico. |
 | 📈 **Risco × retorno** | Da poupança ao Bitcoin: simulação de Monte Carlo (2.000 cenários) com bandas de percentil — o que você ganha na mediana e o que arrisca no cenário ruim. |
 | 💼 **PJ × CLT** | Líquido real dos dois lados com as tabelas de 2026 (INSS, IRRF com isenção até R$ 5 mil, Simples Nacional com Fator R e tabelas dos Anexos III/V, MEI com DAS fixo e teto), benefícios, férias, FGTS — e os custos de deslocamento e home office por modalidade. |
 | 💻 **Upgrade de computador** | Um computador mais rápido se paga? Payback, VPL e quanto custa cada mês de espera. |

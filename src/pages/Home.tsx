@@ -27,9 +27,10 @@ export default function Home() {
           Vale a pena<span className="text-accent">?</span>
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-ink-2">
-          Alugar ou comprar? PJ ou CLT? Financiar ou investir? Cada decisão tem duas pontas — aqui
-          você compara as duas com <strong className="text-ink">números de verdade</strong>: taxas ao
-          vivo do Banco Central, impostos de 2026 e custo de oportunidade.
+          Alugar ou comprar? PJ ou CLT? Parcelar ou pagar à vista? Das decisões grandes às do dia a
+          dia, toda escolha de dinheiro tem duas pontas — aqui você compara as duas com{' '}
+          <strong className="text-ink">números de verdade</strong>: taxas ao vivo do Banco Central,
+          impostos de 2026 e custo de oportunidade.
         </p>
         <div className="mt-5 flex justify-center">
           <LiveBadge live={rates.aoVivo} referencia={rates.referencia} />
@@ -80,7 +81,7 @@ export default function Home() {
           },
           {
             t: 'Custo de oportunidade',
-            d: 'Toda comparação considera o que o seu dinheiro renderia investido — porque parado ele nunca está.',
+            d: 'Toda comparação considera o que o seu dinheiro renderia investido — porque parado ele nunca está. Vale para a compra da casa e para o desconto à vista do IPVA.',
           },
         ].map(x => (
           <div key={x.t}>

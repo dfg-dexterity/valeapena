@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp, Compass, BatteryCharging } from 'lucide-react'
+import { Briefcase, Car, CreditCard, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp, Compass, BatteryCharging } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
 
@@ -8,6 +8,7 @@ const Carro = lazy(() => import('./pages/Carro'))
 const Imovel = lazy(() => import('./pages/Imovel'))
 const Morar = lazy(() => import('./pages/Morar'))
 const Investimentos = lazy(() => import('./pages/Investimentos'))
+const Parcelar = lazy(() => import('./pages/Parcelar'))
 const Risco = lazy(() => import('./pages/Risco'))
 const PjClt = lazy(() => import('./pages/PjClt'))
 const Computador = lazy(() => import('./pages/Computador'))
@@ -43,6 +44,13 @@ export const TOOLS = [
     title: 'Renda fixa na prática',
     desc: 'CDB, LCI/LCA, LC, Tesouro e fundos — líquido de IR, taxas e come-cotas, lado a lado.',
     icon: Landmark,
+  },
+  {
+    path: '/parcelar',
+    label: 'Parcelar',
+    title: 'Parcelar ou à vista?',
+    desc: 'A conta do dia a dia: o desconto à vista paga o que o seu dinheiro renderia até a última parcela? Com desconto de equilíbrio e a taxa que o “sem juros” esconde.',
+    icon: CreditCard,
   },
   {
     path: '/risco',
@@ -169,6 +177,7 @@ export default function App() {
             <Route path="/imovel" element={<Imovel />} />
             <Route path="/morar" element={<Morar />} />
             <Route path="/investimentos" element={<Investimentos />} />
+            <Route path="/parcelar" element={<Parcelar />} />
             <Route path="/risco" element={<Risco />} />
             <Route path="/pj-clt" element={<PjClt />} />
             <Route path="/computador" element={<Computador />} />
