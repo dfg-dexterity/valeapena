@@ -101,7 +101,7 @@ function TopBar() {
             vale a pena<span className="text-accent">?</span>
           </span>
         </NavLink>
-        <nav className="scrollbar-none -mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1">
+        <nav className="scrollbar-none -mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1 max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-36px),transparent)] max-lg:pr-9">
           {TOOLS.map(t => (
             <NavLink
               key={t.path}
