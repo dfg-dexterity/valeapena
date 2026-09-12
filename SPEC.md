@@ -278,6 +278,57 @@ contrib_{o,s} = 100 · pesoEfetivo_s · x_{o,s}/5         (Σ_s contrib = total_
 
 **Guards/UX**: sem NaN (ΣW=0, Σw=0 numa área → areaScore = 0,6 (nota 3) com aviso, 1 opção); nomes vazios → “Proposta N”; max 4 opções; mobile empilha e a matriz rola dentro do card; tudo pt-BR; sem novas dependências; `npx tsc --noEmit` limpo.
 
+## Rodada 5 — Eletrico.tsx: vale a pena comprar um elétrico? (página NOVA)
+
+Rota `/eletrico` (TOOLS/route já em App.tsx, ícone `BatteryCharging`). Dados em `src/lib/eletrico2026.ts` (LEIA: `CATEGORIAS_EV`, `DEPRECIACAO_EV`, `IPVA_EV_UF` + `ipvaPhevSp()`, `TARIFAS_ENERGIA`, `COMBUSTIVEIS_2026`, `RECARGA_PUBLICA_KWH`, `SOLAR_KWH_MARGINAL`, `CENARIOS_RECARGA`, `BATERIA_2026`, `SP_CAPITAL_DEVOLUCAO_IPVA_BEV`, `MOTORIZACAO_NOME`). Pesquisa completa (fontes/URLs) nos arquivos `ev-0.md` (mercado/depreciação/IPVA/seguro/manutenção/bateria/TCO), `ev-2.md` (energia/combustível/tarifa branca/pública/solar) e `ev-1.md` (infra de recarga) no scratchpad indicado no prompt.
+
+**Pergunta:** comprar um **elétrico (BEV)**, um **híbrido plug-in (PHEV, opcional — só quando a categoria tem `phev`)** ou um **combustão (ICE)** equivalente, mantendo por N anos — comparação em VPL (desconto = custo de oportunidade × 0,85, mesma convenção do Carro/Morar), reaproveitando a ENGENHARIA de `Carro.tsx` (leia-o: `valorEm`, Price, break-even robusto, decomposição com identidade exata, `pmtPrice` p/ equivalente mensal).
+
+**Inputs (coluna esquerda):**
+- Card “Os carros”: categoria (Segmented `CATEGORIAS_EV`; ao trocar, atualiza defaults user-override); preço do elétrico e do combustão (NumberField/slider 60k–500k); Toggle “incluir híbrido plug-in” (desabilitado com nota quando a categoria não tem `phev`) + preço; km/mês (300–5.000, step 50, default **1.250** = 15 mil km/ano); horizonte (3–10 anos, default 5); UF (select `IPVA_EV_UF`, default SP); se SP: Toggle “moro na capital de SP” (devolve 50% do IPVA do elétrico + isenção do rodízio → campo opcional “valor do rodízio para mim, R$/ano”, default 0); compra à vista × financiada (Segmented; entrada %, prazo 12–60, taxa a.a. default `rates.veiculos` com LiveBadge — mesmos termos para todos os carros).
+- Card “Energia e combustível”: distribuidora (select `TARIFAS_ENERGIA`, default Enel SP; seta tarifa R$/kWh — user-override editável 0,50–2,00); Toggle “tarifa branca (carrego à noite)” → usa `brancaForaPonta` (InfoTip: só vale se ≥85–90% do consumo da casa ficar fora de ponta; adesão <3%); Toggle “tenho energia solar com sobra de créditos” → kWh em casa custa `SOLAR_KWH_MARGINAL` (InfoTip Lei 14.300/Fio B; “se não sobra crédito, use a tarifa cheia”); gasolina e etanol R$/l (defaults ANP); Toggle “flex: abasteço o que estiver mais barato” (default ON → custo/km ICE = min(gas/kml, etanol/(kml×0,70))); recarga pública R$/kWh (default 2,20); consumo do elétrico kWh/100 km e km/l do combustão (defaults da categoria).
+- Card “Recarga em casa” (pedido explícito do usuário): Segmented dos 5 `CENARIOS_RECARGA` (nome curto; descrição e faixa abaixo); custo único da infra (editável, default `capex`), custo recorrente R$/ano (default `recorrenteAno`), fração dos kWh carregada em casa % (default `fracCasa`; cenário “rua” trava em 0), perdas de recarga % (default `perdas`). Nota: potência e horas para carregar a bateria da categoria (`bateriaBev / (potenciaKw×0,9)`). InfoTip NBR 17019 (tomada comum compartilhada é vetada), aumento de carga gratuito na distribuidora (15–30 dias), condomínio (assembleia/ART, cabo até R$ 120/m).
+- `Collapse` “Premissas avançadas”: depreciação ano 1 / seguintes por motorização (defaults `DEPRECIACAO_EV`); seguro % por motorização e manutenção R$/ano por motorização (defaults da categoria); PHEV: fração elétrica dos km (default 60%; **0% se cenário “rua”**), kWh/100 km elétrico e km/l híbrido (defaults `phev`); bateria: kWh (categoria), custo R$/kWh (1.500), probabilidade de troca fora da garantia % (5), garantia anos (8) — provisão mensal = kWh×custo×prob/(garantiaAnos×12) enquanto m ≤ garantiaAnos×12 (InfoTip: degradação ~2%/ano já está refletida na depreciação — não somamos duas vezes); % do capex da infra recuperado no fim (0–50, default 0 = custo afundado); reajuste anual de energia e combustível % a.a. (default `rates.ipca12m`, aplicado aos dois a cada 12 meses); licenciamento R$/ano (default da UF); custo de oportunidade % a.a. (default CDI).
+
+**Modelo mensal (m = 1..N), para cada motorização o ∈ {bev, ice, phev?}:**
+```
+valor_o(m)   = preco_o × (1−d1_o)^(min(m,12)/12) × (1−d2_o)^(max(0,m−12)/12)
+reaj(m)      = (1+reajuste)^floor((m−1)/12)
+kWh_casa     = tarifaSel (branca? FP : convencional; solar? SOLAR_KWH_MARGINAL)
+custoKwhBev  = fracCasa×kWh_casa×(1+perdasCasa) + (1−fracCasa)×precoPublico×(1+PERDAS_RECARGA.dc)
+custoKm_bev  = kwh100/100 × custoKwhBev
+custoKm_ice  = flex ? min(gas/kml, etanol/(kml×0,70)) : gas/kml
+custoKm_phev = fracEl×(kwh100Phev/100×custoKwhBev) + (1−fracEl)×gas/kmlPhev   (flex idem, se marcado)
+energia_o(m) = km/mês × custoKm_o × reaj(m)
+seguro_o(m)  = seguroPct_o × valor_o(m)/12
+manut_o(m)   = manutAno_o/12 × reaj(m)
+ipva_o(m)    = aliq_o(ano) × valor_o(m)/12 + licenciamento/12; SP: aliq_phev = ipvaPhevSp(ano−1); capital SP: ipva_bev × (1−0,5); rodízio: −rodizioAno/12 para bev/phev (benefício)
+parcela_o(m) = Price(preco_o − entrada_o) se financiado e m ≤ prazo
+infraRec(m)  = recorrenteAno/12 (bev/phev, cenário ≠ rua)
+bateria_o(m) = provisão (bev: bateriaBev; phev: phev.bateria) enquanto m ≤ garantia×12
+t0_o         = entrada_o (ou preço) + capexInfra (bev/phev; cenário ≠ rua)
+venda_o(N)   = valor_o(N) − saldo_o(N) + capexInfra×residualPct (bev/phev)
+custo_o      = PV(t0 + Σ saídas) − PV(venda_o(N))
+```
+- Linha do gráfico “o se vender no mês m” = PV(saídas até m) − PV(valor_o(m) − saldo_o(m)) (mesma mecânica do Carro; a infra NÃO é recuperada antes de N — residual só em N).
+- **Decomposição em VP (identidade exata, Σ fatias = custo_o, erro ≤ 1e-9)**: depreciação (`preco − valor(N)·dfN`), energia/combustível, seguro, manutenção, IPVA+licenciamento(−rodízio), juros do financiamento (`entrada + PV parcelas + saldoN·dfN − preco`, ≥0), recarga em casa (`capex − residual·dfN + PV recorrente`), bateria (PV provisão). Se alguma fatia ficar negativa (rodízio > IPVA), tratar como crédito com nota (padrão do Carro).
+- **Break-even em meses** (regra robusta do Carro: primeiro mês a partir do qual o elétrico fica mais barato que o combustão ATÉ O FIM; null se nunca) e **break-even em km/mês**: varrer km de 100 a 5.000 (passo 50) re-simulando custo_bev e custo_ice (e phev) e reportar o menor km em que custo_bev ≤ custo_ice (null = “nunca neste horizonte” ou “sempre”, cobrir os dois extremos). Mostrar também a curva custo VP × km/mês (3 séries, cruzamento = break-even).
+- Equivalente mensal da diferença: `pmtPrice(|Δ|, d, N)`.
+
+**Saídas (coluna direita):**
+- `Verdict`: vencedor (menor custo VP) + “economiza R$ X em N anos (≈ R$ Y/mês)”; badge com break-even km/mês (“compensa a partir de Z km/mês” ou “compensa em qualquer quilometragem” / “não compensa neste horizonte”); tone positive se o elétrico vence, neutral se |Δ| < 2% do custo, negative se o combustão vence. Detail cita a infra escolhida (“inclui R$ 7.000 de wallbox + instalação”).
+- `ExportBar` (pagina 'eletrico'; csv = tabela ano a ano; resumo; premissas completas).
+- StatTiles (grid 2×2 ou 2×4): custo VP de cada motorização (2–3 tiles), custo por km de cada (energia+combustível apenas), gasto mensal energia × combustível (R$/mês, ano 1), “infra de recarga” (capex + PV recorrente − residual) e “economia em manutenção+IPVA” (opcional).
+- Gráfico 1: linhas VP acumulado × mês (bev colorIndex 0, ice 1, phev 2) + nota do break-even em meses.
+- Gráfico 2: barras empilhadas “de onde vem o custo” por motorização (8 fatias; ordem fixa; créditos fora com nota).
+- Gráfico 3: linhas custo VP × km/mês (3 séries; cruzamento; refY não é necessário).
+- Card “Recarga em casa”: horas para carregar 20→80% e 0→100% no cenário escolhido; custo de 1.000 km em casa × na rua × a gasolina (números reais).
+- Tabela ano a ano: valor de cada carro, gasto do ano por motorização, VP acumulado por motorização.
+- `Didatico`: (1) VPL em uma frase; (2) “o elétrico custa mais na compra mas menos para rodar: R$ a/km × R$ b/km — em N anos isso é R$ …”; (3) depreciação maior do elétrico (com os R$ reais) e por que ela é o parâmetro mais incerto (guerra de preços BYD/GWM); (4) a infra em casa custa R$ … e representa …% do total; (5) regra de bolso: “a partir de Z km/mês o elétrico vence”; analogia (assinatura cara com mensalidade barata); sensibilidade (km/mês e depreciação invertem).
+- Card “Premissas e fontes”: ANP (30/08–05/09/2026), ANEEL tarifas homologadas (leitura 11/09/2026), Fipe via Motor Show ago/2026, KBB mai/2026, Bright jul/2026, ABVE ago/2026 (eletrificados 22% dos leves), IPSA/TEx jun/2026 (seguro), CustoCarro abr/2026 (manutenção), Geotab jan/2026 (bateria 2,3%/ano), NSC Total jun/2026 (troca R$ 1.300–1.800/kWh), NBR 17019/5410, Sefaz estaduais (IPVA), Lei 14.300 (solar), Lei municipal SP 15.997/2014 (rodízio/IPVA).
+
+**Guards/UX:** sem NaN em extremos (km 300, horizonte 3, tarifa 0,50, fração casa 0/100, financiado 60 m > horizonte 36 m → saldo na venda); PHEV some do gráfico/tiles/tabela quando desligado; cenário “rua” trava fracCasa = 0 e fracEl (PHEV) = 0 com nota; tudo pt-BR; sem dependências novas; `npx tsc --noEmit` limpo; mobile empilha.
+
 ## Qualidade
 
 - `npx tsc --noEmit` limpo (strict, noUnusedLocals). Rodar antes de terminar.

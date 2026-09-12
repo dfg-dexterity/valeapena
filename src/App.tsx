@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp, Compass } from 'lucide-react'
+import { Briefcase, Car, Home as HomeIcon, Hourglass, KeyRound, Landmark, Laptop, Moon, Scale, Sun, TrendingUp, Compass, BatteryCharging } from 'lucide-react'
 import { useTheme } from './theme'
 import Home from './pages/Home'
 
@@ -13,6 +13,7 @@ const PjClt = lazy(() => import('./pages/PjClt'))
 const Computador = lazy(() => import('./pages/Computador'))
 const Tempo = lazy(() => import('./pages/Tempo'))
 const Emprego = lazy(() => import('./pages/Emprego'))
+const Eletrico = lazy(() => import('./pages/Eletrico'))
 
 export const TOOLS = [
   {
@@ -77,6 +78,13 @@ export const TOOLS = [
     title: 'Emprego: qual escolher?',
     desc: 'Compare propostas de trabalho com os critérios que importam para você — pesos, notas, números reais e o que faria a decisão virar.',
     icon: Compass,
+  },
+  {
+    path: '/eletrico',
+    label: 'Elétrico',
+    title: 'Vale a pena comprar um elétrico?',
+    desc: 'Elétrico, híbrido plug-in ou combustão: energia × combustível, wallbox e adequação elétrica em casa, depreciação, IPVA, seguro, manutenção e bateria — em valor presente.',
+    icon: BatteryCharging,
   },
 ] as const
 
@@ -166,6 +174,7 @@ export default function App() {
             <Route path="/computador" element={<Computador />} />
             <Route path="/tempo" element={<Tempo />} />
             <Route path="/emprego" element={<Emprego />} />
+            <Route path="/eletrico" element={<Eletrico />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </Suspense>
