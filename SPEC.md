@@ -228,7 +228,7 @@ Modelo: valor bruto hora extra = `wNominal×(1+adicional)`; se `horasTotais > 50
 ### R3.7 ExportBar + Didatico em TODAS as páginas
 
 Cada página (Carro, Imovel, Morar, Investimentos, Risco, PjClt, Computador, Tempo):
-1. `<ExportBar>` logo abaixo do `Verdict`, com: `pagina` (slug), `resumo` (texto multi-linha: veredito com números + 3–5 linhas-chave + "gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app"), `csv` (a tabela principal da página: mesmas linhas do DataTable de detalhamento), `premissas` (pares [label, valor] dos inputs relevantes — TODOS os que afetam a conta, formatados).
+1. `<ExportBar>` logo abaixo do `Verdict`, com: `pagina` (slug), `resumo` (texto multi-linha: veredito com números + 3–5 linhas-chave + "gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app"), `csv` (a tabela principal da página: mesmas linhas do DataTable de detalhamento), `premissas` (pares [label, valor] dos inputs relevantes — TODOS os que afetam a conta, formatados).
 2. `<Didatico>` no fim dos resultados (antes de premissas/fontes): 3–5 passos com os números REAIS calculados, 1 analogia, 1 sensibilidade. Conteúdo específico por página (ex.: Carro explica depreciação+VPL; Investimentos explica IR regressivo e por que isento ≠ melhor; Risco explica p10/p90 e "risco não é ruim, é preço"; PjClt explica Fator R e o custo invisível do deslocamento; Computador explica payback).
 3. Não alterar a matemática existente das 6 páginas antigas (exceto Morar, R3.5).
 

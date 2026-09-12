@@ -405,7 +405,7 @@ export default function Investimentos() {
     `Melhor isento de IR: ${melhorIsento.nome} — ${brl(melhorIsento.r.liquido)} líquidos`,
     `Alíquota de IR no prazo: ${pct(calc.aliqPrazo * 100, 1)} · equivalência: LCI/LCA a ${num(lciPct)}% do CDI = CDB a ${pct(calc.lciEquivCdb, 1)} do CDI`,
     `Vantagem sobre a poupança: ${brl(Math.max(0, vencedor.r.liquido - calc.poupanca.r.liquido))}`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const r2 = (v: number) => Math.round(v * 100) / 100

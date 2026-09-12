@@ -657,7 +657,7 @@ export default function Morar() {
     `Premissas-chave: valorização ${pct(sim.g, 1)} a.a. · reajuste ${idxLabel} ${pct(sim.reaj, 2)} a.a. · desconto ${pct(sim.descontoAa, 1)} a.a.${
       sim.fgtsS > 0 ? ` · FGTS de ${brl(sim.fgtsS)}` : ''
     }${sim.irVendaN > 0 ? ` · IR na venda de ${brl(sim.irVendaN)}` : ''}`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const csvExport = {

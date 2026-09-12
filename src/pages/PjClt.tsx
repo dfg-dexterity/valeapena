@@ -454,7 +454,7 @@ export default function PjClt() {
       ? 'Faturamento de equilíbrio: acima de R$ 1 mi/mês'
       : `Faturamento de equilíbrio: ${brl(breakEven)}/mês`,
     `FGTS + 13º líquido no ano (só o CLT tem): ${brl(calc.fgtsAnual + calc.dec13.liquido)}`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   /* ---------- didática (R3.3) ---------- */

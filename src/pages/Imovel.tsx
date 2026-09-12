@@ -284,7 +284,7 @@ export default function Imovel() {
     `1ª parcela: ${brlCents(sim.p1)} (com MIP, DFI e tarifa) · última: ${brlCents(sim.pUltima)}`,
     `Total pago ao banco: ${brl(sim.totalPago)} — ${brl(sim.totalJuros)} de juros + ${brl(sim.totalSeguros)} de seguros e tarifa`,
     `CET aproximado: ${pct(sim.cet, 2)} a.a. (taxa contratada de ${pct(taxaAa, 2)} a.a.${usarTr ? ' + TR' : ''})`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const premissas: [string, string][] = [

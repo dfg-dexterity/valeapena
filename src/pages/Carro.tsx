@@ -354,7 +354,7 @@ export default function Carro() {
     `Assinatura 0 km: ${brl(sim.custoSub)} em valor presente (${brl(assinaturaMes)}/mês)`,
     `Custo por km: comprar ${brlCents(sim.custoKmBuy)} · assinar ${brlCents(sim.custoKmSub)}`,
     `Taxa de desconto: ${pct(sim.descontoAa, 1)} a.a. (custo de oportunidade de ${pct(custoOp, 1)} líquido de 15% de IR)`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const csv = {

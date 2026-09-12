@@ -479,7 +479,7 @@ export default function Tempo() {
     `Hora no contracheque: ${brlCents(base.wNominal)} · hora de verdade: ${brlCents(base.wReal)} (−${pct(Math.max(0, base.quedaPct), 1)})`,
     `Semana real: ${num(base.horasSemana, 1)} h · mês real: ${num(base.horasMes, 1)} h · 1 h/dia desperdiçada ≈ ${brl(base.horaDesperdicadaMes)}/mês`,
     ...resumoModo,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   /* ------------------------------ Didático ------------------------------ */

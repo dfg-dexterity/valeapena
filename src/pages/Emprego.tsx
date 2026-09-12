@@ -834,7 +834,7 @@ export default function Emprego() {
     ...(fraseFlipTexto ? [`E se: ${fraseFlipTexto}`] : []),
     `Critério que mais pesa para você: ${critMaisPesado.nome} (${pct(pesoMaisPesadoPct, 1)} do total)`,
     `${num(res.notasNoPadrao)} de ${num(res.totalCelulas)} notas ainda no padrão (3)`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const premissas: [string, string][] = [

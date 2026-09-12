@@ -297,7 +297,7 @@ export default function Risco() {
     `Chance de perder do CDI (${pct(cdi, 1)} a.a.): ${pct(resultado.probCdi * 100, 0)} — o CDI daria ${brl(resultado.cdiFinal)}`,
     `Total investido: ${brl(resultado.totalInvestido)} (${brl(inicial)} hoje + ${mesesTotal}× ${brl(aporte)})`,
     'Valores nominais e brutos, antes de IR e inflação.',
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const csvExport = {

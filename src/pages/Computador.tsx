@@ -244,7 +244,7 @@ export default function Computador() {
     `Tempo economizado: ${num(calc.horasEcoDia * 60)} min/dia útil ≈ ${num(calc.horasEcoMes, 1)} h/mês, valendo ${brl(calc.valorMes)}/mês (hora a ${brlCents(calc.valorHora)})`,
     `Investimento líquido: ${brl(calc.custoLiquido)} (novo ${brl(custoNovo)} − revenda do atual ${brl(revendaAtual)})`,
     `Custo de oportunidade: ${pct(custoOportunidade, 2)} a.a. (CDI líquido de IR)`,
-    'gerado por vale a pena? · Dexterity — valeapena-flame.vercel.app',
+    'gerado por vale a pena? · Dexterity — valeapena-puce.vercel.app',
   ].join('\n')
 
   const r2 = (v: number) => Math.round(v * 100) / 100
